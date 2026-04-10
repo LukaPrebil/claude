@@ -29,6 +29,7 @@
 ## How it works
 
 The monitor scripts poll CI status every 30 seconds but only emit a line when the status **changes**. This means:
+
 - Zero token cost while the pipeline is running and status hasn't changed
 - Claude reacts within ~30s of a status change (vs up to 2 min with /loop)
 - No CronDelete cleanup needed — the script exits on terminal state, ending the Monitor
