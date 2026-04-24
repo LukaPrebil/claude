@@ -27,3 +27,19 @@ All other commands are automatically rewritten by the Claude Code hook.
 Example: `git status` → `rtk git status` (transparent, 0 tokens overhead)
 
 Refer to CLAUDE.md for full command reference.
+
+## Hook Bailouts to Avoid
+
+The RTK hook silently falls back to raw output when a command contains shell
+operators it cannot parse cleanly. To keep adoption high:
+
+- **Do not append `2>&1`** — RTK filters already surface stderr usefully; the
+  redirect suppresses the rewrite and loses the savings. Let failure output
+  flow through naturally.
+- Avoid command substitution (`$(...)`), pipes into interpreters
+  (`| python -c`, `| node -e`), and compound commands (`&&`, `;`) when a
+  simpler single-command form exists.
+
+**Exception: `glab`** — RTK has no `glab` filter yet (tracked upstream at
+rtk-ai/rtk#1085). Until that ships, `glab` commands bypass RTK regardless of
+redirects, so `2>&1` is harmless there.
