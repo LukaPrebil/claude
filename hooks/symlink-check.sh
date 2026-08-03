@@ -1,13 +1,22 @@
 #!/bin/bash
 # SessionStart hook (matcher: startup).
-# Warns to stderr when expected ~/.claude/* symlinks to the dotfiles repo are
-# missing, replaced by a real file, or pointing to the wrong target. Non-blocking.
+# Warns to stderr when the expected symlinks from the live config dir to the
+# dotfiles repo are missing, replaced by a real file, or pointing to the wrong
+# target. Non-blocking.
+#
+# The dir checked resolves from $CLAUDE_CONFIG_DIR (default ~/.claude), the same
+# way scripts/setup-symlinks.sh picks its target, so a second account's dir is
+# audited by its own sessions instead of being skipped.
+#
 # Bypass with SKIP_SYMLINK_CHECK=1 in the environment.
 
 [ "$SKIP_SYMLINK_CHECK" = "1" ] && exit 0
 
 REPO="${CLAUDE_DOTFILES_REPO:-$HOME/dev/claude}"
 [ -d "$REPO" ] || exit 0
+
+LIVE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+[ -d "$LIVE_DIR" ] || exit 0
 
 EXPECTED=(
   "CLAUDE.md|$REPO/CLAUDE.md"
@@ -25,7 +34,7 @@ ISSUES=()
 for ENTRY in "${EXPECTED[@]}"; do
   NAME="${ENTRY%%|*}"
   WANT="${ENTRY##*|}"
-  LIVE="$HOME/.claude/$NAME"
+  LIVE="$LIVE_DIR/$NAME"
 
   if [ ! -e "$LIVE" ] && [ ! -L "$LIVE" ]; then
     ISSUES+=("MISSING:       $LIVE  (expected -> $WANT)")
@@ -40,13 +49,13 @@ for ENTRY in "${EXPECTED[@]}"; do
 done
 
 if [ ${#ISSUES[@]} -gt 0 ]; then
-  echo "[symlink-check] dotfiles symlinks have drifted from $REPO:" >&2
+  echo "[symlink-check] $LIVE_DIR symlinks have drifted from $REPO:" >&2
   for ISSUE in "${ISSUES[@]}"; do echo "  - $ISSUE" >&2; done
   echo "" >&2
   echo "Fix each path with:" >&2
   echo "  unlink <path> 2>/dev/null; rm -rf <path> 2>/dev/null; ln -s <expected-target> <path>" >&2
   echo "" >&2
-  echo "(Override repo location: CLAUDE_DOTFILES_REPO=/path/to/repo. Bypass this check: SKIP_SYMLINK_CHECK=1.)" >&2
+  echo "(Override repo location: CLAUDE_DOTFILES_REPO=/path/to/repo. Override config dir: CLAUDE_CONFIG_DIR=/path/to/dir. Bypass this check: SKIP_SYMLINK_CHECK=1.)" >&2
 fi
 
 exit 0
