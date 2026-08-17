@@ -48,4 +48,4 @@ When a task crosses domains, spawn multiple subagents in **parallel** - send a s
 
 - Subagent guardrails apply within their context. Act on the subagent's summary, not the agent file `(review-time: about Claude's use of the agent's reply)`
 - Multiple subagents may produce conflicting recommendations - surface conflicts to the user, do not silently pick a side `(review-time: requires reading multiple subagent outputs)`
-- Subagents see none of the parent conversation - brief them with self-contained prompts (goal, file paths, constraints, verification command) `(review-time: prompt-quality judgment)`
+- Brief subagents with self-contained prompts (goal, file paths, constraints, verification command) `(review-time: prompt-quality judgment)`
