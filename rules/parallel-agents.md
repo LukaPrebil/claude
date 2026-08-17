@@ -63,9 +63,8 @@ Worktree isolation applies to **lane mode** (file-mutating work). Panel mode is 
 - Each teammate works on its own branch - no risk of stepping on other teammates' changes `(review-time: descriptive of the mechanism)`
 - NEVER run file-mutating parallel teammates without worktree isolation - concurrent edits to the same working directory will cause corruption `(review-time: tool-call parameter choice; not currently hook-gated)`
 
-## Background Execution
+## Spawning and Coordination
 
-- Spawn teammates with `run_in_background: true` so they execute concurrently `(review-time: tool-call parameter)`
 - Launch all independent teammates in a single message with multiple Agent tool calls `(review-time: message-shape choice)`
 - In **lane mode**, after spawning, wait for automatic completion notifications - do NOT poll or check repeatedly `(review-time: behavioral discipline)`
 - In **panel mode**, this rule is inverted: actively coordinate via SendMessage during the cross-challenge round rather than waiting silently for notifications `(review-time: behavioral discipline, mode-dependent)`
@@ -84,7 +83,7 @@ After all agents complete:
 
 ## Agent Prompt Quality
 
-Each agent's prompt MUST be self-contained. The agent cannot see the parent conversation. Include:
+Each agent's prompt MUST be self-contained. Include:
 
 - **Goal**: Exactly what the agent must accomplish - be specific and unambiguous `(review-time: prompt-quality)`
 - **Context**: Relevant background (why this change is needed, what the broader task is) `(review-time: prompt-quality)`
