@@ -1,17 +1,37 @@
 # Shared Agent Guidance
 
-These instructions apply to every project. Project instructions override them when they conflict. They are host-neutral: Claude Code, Codex, Pi, and other agent hosts should follow the same behavior through their native capabilities.
+These shared instructions apply to every host and project. Project instructions win conflicts.
 
 ## Priorities
 
-When goals conflict, prefer quality, then consistency, then efficiency, then speed. Stay within the requested scope and favor the smallest complete change.
+Prefer quality, consistency, efficiency, then speed. Make the smallest complete in-scope change.
+
+## Read this first
+
+### Write plain
+
+- Use active voice and present tense. Name the actor.
+- Keep one idea per sentence. Cut introductions and repeated summaries. Return only a requested table or list.
+- Avoid filler and marketing language: "it's worth noting", "in order to", "leverage", "utilize", "delve", "robust", "seamless", and "comprehensive".
+- Limits: pull request 150 words; review or reply 120; diary 300; ADR 400. Exceed them only when needed.
+
+### Verify before asserting
+
+Cite the file and line, command output, or query checked. Use the source, not memory or a session artifact. State what cannot be verified.
+
+### Follow the existing pattern
+
+Find and name the current pattern before adding an abstraction, config, command, permission, or plugin.
+
+### Build only what was asked
+
+Ask before expanding scope. Never change production request handling only to satisfy a linter or bot.
 
 ## Skills and detailed rules
 
-- Check the available skills before starting and use any skill that matches the user's request or the current workflow.
-- Use the `rulebook` skill to load detailed standards from `rules/`. Read only the rule files relevant to the task.
-- Treat a skill's workflow as authoritative for that task. Global safety and user instructions still take priority.
-- Do not copy detailed rules into project instructions. Keep `AGENTS.md` concise and keep detailed guidance in skills and `rules/`.
+- Use any available skill that matches the request or workflow.
+- Use `rulebook` to load only relevant detailed standards from `rules/`.
+- Treat the skill workflow as authoritative below global safety and user instructions. Keep details out of `AGENTS.md`.
 
 ### Compatibility notation
 
@@ -50,13 +70,12 @@ The historical `.claude/state/` path is shared workflow state for every host. Do
 
 ## Implementation standards
 
-- Inspect neighboring code and repository guidance before choosing an approach. Follow established patterns unless the approved plan changes them.
-- Touch only files required by the task. Do not add unrelated refactors, features, or documentation.
 - Implement complete behavior with no placeholders or untracked TODOs.
 - For bug fixes, identify the root cause and start with the smallest change that can fix it. Do not add abstractions unless the minimal fix is insufficient or the user asks for them.
 - Use the repository's formatter, linter, type checker, tests, and build commands. Discover the actual CI checks rather than guessing.
 - Add tests for new behavior and bug fixes at the closest useful behavior boundary. Keep tests alongside the increment they verify.
 - Update existing documentation when the implemented behavior it describes changes. Do not document planned or speculative behavior as if it already exists.
+- Do not create new documentation unless the user requested it or the active workflow produces it by design.
 - Before changing or removing an unfamiliar construct, use history and `git blame` to understand why it exists.
 - Never trade away error handling, type safety, tests, or configuration boundaries for speed.
 
@@ -67,6 +86,7 @@ Load `rulebook` whenever the task needs detailed language, test, database, infra
 - Never read or process secrets, credentials, API keys, or private keys.
 - Treat `.env*`, `*.pem`, `*.key`, `credentials.json`, and `service-account*.json` as sensitive.
 - Do not inspect home-directory credential stores such as `.aws`, `.ssh`, `.config/gcloud`, or `.kube`.
+- Never work around a host deny rule or another access boundary.
 - Ask the user for only the non-sensitive values needed when configuration or external access is required.
 - Before deleting or destroying shared or stateful infrastructure, identify its consumers and get explicit confirmation.
 - Warn before changes that add paid services, resources, or ongoing cost.
@@ -78,6 +98,7 @@ Load `rulebook` whenever the task needs detailed language, test, database, infra
 - Use conventional commit messages and do not add AI attribution or co-author trailers.
 - Commit or push only when the user or active workflow authorizes it.
 - Run the repository's complete quality gate before pushing.
+- Rebase onto the current target branch before opening a pull request.
 - Never force-push or merge a pull request without fresh, explicit user approval.
 - Keep commits focused and reviewable. Split unrelated work and very large changes.
 - Feature implementation normally ends with a commit, push, and pull request unless the user or parent workflow explicitly scopes the work to an earlier handoff point.
