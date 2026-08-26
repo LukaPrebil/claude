@@ -124,3 +124,109 @@ if [ -n "$five_h" ] || [ -n "$seven_d" ]; then
     printf " 7d ${BOLD}${sd_color}%d%%${RESET}" "$sd_int"
   fi
 fi
+
+# Minor currency units to a short label: $70.52 under $1000, $6.5k at or above.
+compact_money() {
+  echo "$1 $2" | awk '{
+    div = 1
+    for (i = 0; i < $2; i++) div *= 10
+    major = $1 / div
+    if (major >= 1000) {
+      s = sprintf("$%.1fk", major / 1000)
+      sub(/\.0k$/, "k", s)
+      print s
+    } else {
+      printf "$%.2f", major
+    }
+  }'
+}
+
+# Severity is the server's own judgement of pool state, which matters when the pool is
+# shared and local spend says nothing about how full it is. Its value set is not
+# published, so anything unrecognised falls back to the local percentage thresholds.
+credit_color() {
+  case "$1" in
+    normal) printf '%s' "$GREEN" ;;
+    warning) printf '%s' "$YELLOW" ;;
+    critical | exceeded | blocked) printf '%s' "$RED" ;;
+    *) usage_color "$2" ;;
+  esac
+}
+
+# Usage credits: the statusline payload carries no spend field, so read the client's own
+# cached copy of the usage endpoint. Every field is nullable and the monthly cap is
+# changed by admins, so none of it may be hardcoded.
+cfg_json="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+credits=""
+if [ -f "$cfg_json" ]; then
+  credits=$(jq -r '
+    (.cachedUsageUtilization // {}) as $c
+    | ($c.utilization // {}) as $u
+    | (($u.spend.used.amount_minor // $u.extra_usage.used_credits) // -1) as $used
+    | (($u.spend.limit.amount_minor // $u.extra_usage.monthly_limit) // -1) as $limit
+    | if $used < 0 or $limit <= 0 then empty
+      else [$used, $limit, ($u.spend.used.exponent // 2), ($u.spend.severity // ""), ($c.fetchedAtMs // 0)] | @tsv
+      end
+  ' "$cfg_json" 2>/dev/null)
+fi
+
+if [ -n "$credits" ]; then
+  used_minor=$(echo "$credits" | cut -f1)
+  limit_minor=$(echo "$credits" | cut -f2)
+  cred_exp=$(echo "$credits" | cut -f3)
+  cred_sev=$(echo "$credits" | cut -f4)
+  fetched_ms=$(echo "$credits" | cut -f5)
+
+  now_s=$(date +%s)
+  age_s=-1
+  if [ "$fetched_ms" -gt 0 ]; then
+    age_s=$((now_s - fetched_ms / 1000))
+  fi
+
+  # The client refreshes this cache only on its own triggers, so a long session renders a
+  # figure that can be hours old. Ask Claude Code to refresh it under its own credentials:
+  # those tokens rotate, and a second writer to the keychain risks signing the user out.
+  # The stamp is written before spawning because renders fire many times a second and
+  # would otherwise stampede the refresh window.
+  if [ "$age_s" -lt 0 ] || [ "$age_s" -gt 300 ]; then
+    stamp="${TMPDIR:-/tmp}/claude-statusline-usage-refresh-$(id -u)"
+    if [ ! -f "$stamp" ] || [ -z "$(find "$stamp" -mmin -5 2>/dev/null)" ]; then
+      : > "$stamp"
+      claude_bin=$(command -v claude 2>/dev/null)
+      if [ -n "$claude_bin" ]; then
+        nohup "$claude_bin" -p /usage --strict-mcp-config \
+          --mcp-config '{"mcpServers":{}}' >/dev/null 2>&1 &
+      fi
+    fi
+  fi
+
+  used_label=$(compact_money "$used_minor" "$cred_exp")
+  limit_label=$(compact_money "$limit_minor" "$cred_exp")
+  cred_pct=$(echo "$used_minor $limit_minor" | awk '{
+    p = $1 * 100 / $2
+    if (p > 0 && p < 0.1) { print "<0.1"; next }
+    s = sprintf("%.1f", p)
+    sub(/\.0$/, "", s)
+    print s
+  }')
+
+  stale=""
+  if [ "$age_s" -ge 900 ]; then
+    age_min=$((age_s / 60))
+    if [ "$age_min" -ge 60 ]; then
+      stale=" · $((age_min / 60))h"
+    else
+      stale=" · ${age_min}m"
+    fi
+  fi
+
+  if [ -n "$stale" ]; then
+    printf "${SEP}${DIM}credits %s / %s (%s%%)%s${RESET}" \
+      "$used_label" "$limit_label" "$cred_pct" "$stale"
+  else
+    cred_pct_int=$(echo "$used_minor $limit_minor" | awk '{printf "%d", $1 * 100 / $2}')
+    cred_color=$(credit_color "$cred_sev" "$cred_pct_int")
+    printf "${SEP}${BOLD}${MAGENTA}credits${RESET} ${cred_color}%s / %s (%s%%)${RESET}" \
+      "$used_label" "$limit_label" "$cred_pct"
+  fi
+fi
