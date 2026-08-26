@@ -130,6 +130,7 @@ assert_true "Codex AGENTS.md is shared" assert_link "$TEST_HOME/.codex/AGENTS.md
 assert_true "Pi AGENTS.md is shared" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
 assert_true "shared skills are repo-owned" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Codex fallback is created" grep -Fq 'project_doc_fallback_filenames = ["CLAUDE.md"]' "$TEST_HOME/.codex/config.toml"
+assert_true "Codex status line is created" grep -Fq 'status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]' "$TEST_HOME/.codex/config.toml"
 assert_success "clean check exits zero" run_setup --check
 
 # Re-applying makes no backups or content changes.
@@ -180,13 +181,33 @@ printf '[features]\nweb_search = true\n' > "$TEST_HOME/.codex/config.toml"
 assert_success "existing Codex config gets safe fallback" run_setup --apply --host codex
 assert_true "existing Codex config has fallback at root" test "$(sed -n '1p' "$TEST_HOME/.codex/config.toml")" = 'project_doc_fallback_filenames = ["CLAUDE.md"]'
 assert_true "existing Codex settings are preserved" grep -Fq 'web_search = true' "$TEST_HOME/.codex/config.toml"
+assert_true "existing Codex config gets status line" grep -Fq 'status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]' "$TEST_HOME/.codex/config.toml"
 assert_true "existing Codex config has one backup" test "$(backup_count "$TEST_HOME/.codex/config.toml")" -eq 1
 
-# A compatible fallback is a no-op; incompatible and multiline forms refuse.
+# An existing tui table receives the default without creating a second table.
+new_case codex_existing_tui
+mkdir -p "$TEST_HOME/.codex"
+printf '[tui]\nnotifications = true\n' > "$TEST_HOME/.codex/config.toml"
+assert_success "existing tui table gets status line" run_setup --apply --host codex
+assert_true "existing tui setting is preserved" grep -Fq 'notifications = true' "$TEST_HOME/.codex/config.toml"
+assert_true "existing tui table is not duplicated" test "$(grep -c '^\[tui\]$' "$TEST_HOME/.codex/config.toml")" -eq 1
+assert_true "status line is inside existing tui table" test "$(sed -n '/^\[tui\]$/,/^\[/p' "$TEST_HOME/.codex/config.toml" | grep -c '^status_line = ')" -eq 1
+
+# A custom status line is preserved while an independent fallback is added.
+new_case codex_custom_status
+mkdir -p "$TEST_HOME/.codex"
+printf '[tui]\nstatus_line = ["thread-id"]\n' > "$TEST_HOME/.codex/config.toml"
+assert_success "custom Codex status line is preserved" run_setup --apply --host codex
+assert_true "custom status line remains unchanged" grep -Fq 'status_line = ["thread-id"]' "$TEST_HOME/.codex/config.toml"
+assert_true "custom status config gets fallback" test "$(sed -n '1p' "$TEST_HOME/.codex/config.toml")" = 'project_doc_fallback_filenames = ["CLAUDE.md"]'
+assert_true "custom status migration has one backup" test "$(backup_count "$TEST_HOME/.codex/config.toml")" -eq 1
+
+# A compatible fallback and custom status line are a complete no-op.
 new_case codex_compatible
 mkdir -p "$TEST_HOME/.codex"
-printf 'project_doc_fallback_filenames = ["AGENT.md", "CLAUDE.md"]\n' > "$TEST_HOME/.codex/config.toml"
+printf 'project_doc_fallback_filenames = ["AGENT.md", "CLAUDE.md"]\n\n[tui]\nstatus_line = ["git-branch"]\n' > "$TEST_HOME/.codex/config.toml"
 assert_success "compatible Codex fallback is unchanged" run_setup --apply --host codex
+assert_true "compatible custom status is unchanged" grep -Fq 'status_line = ["git-branch"]' "$TEST_HOME/.codex/config.toml"
 assert_true "compatible Codex config has no backup" test "$(backup_count "$TEST_HOME/.codex/config.toml")" -eq 0
 
 new_case codex_incompatible
@@ -209,6 +230,21 @@ new_case codex_multiline
 mkdir -p "$TEST_HOME/.codex"
 printf 'project_doc_fallback_filenames = [\n  "CLAUDE.md",\n]\n' > "$TEST_HOME/.codex/config.toml"
 assert_failure "multiline Codex fallback is refused" run_setup --apply --host codex
+
+# Ambiguous tui layouts and duplicate status lines require a manual edit.
+new_case codex_nested_tui
+mkdir -p "$TEST_HOME/.codex"
+printf 'project_doc_fallback_filenames = ["CLAUDE.md"]\n\n[tui.keymap]\nexample = "ctrl-e"\n' > "$TEST_HOME/.codex/config.toml"
+BEFORE=$(cksum "$TEST_HOME/.codex/config.toml")
+assert_failure "nested tui without parent is refused" run_setup --apply --host codex
+assert_true "nested tui config is untouched" test "$BEFORE" = "$(cksum "$TEST_HOME/.codex/config.toml")"
+
+new_case codex_duplicate_status
+mkdir -p "$TEST_HOME/.codex"
+printf 'project_doc_fallback_filenames = ["CLAUDE.md"]\n\n[tui]\nstatus_line = ["git-branch"]\nstatus_line = ["thread-id"]\n' > "$TEST_HOME/.codex/config.toml"
+BEFORE=$(cksum "$TEST_HOME/.codex/config.toml")
+assert_failure "duplicate Codex status lines are refused" run_setup --apply --host codex
+assert_true "duplicate status config is untouched" test "$BEFORE" = "$(cksum "$TEST_HOME/.codex/config.toml")"
 
 # The legacy command selects only Claude and retains automatic safe adoption.
 new_case legacy_wrapper

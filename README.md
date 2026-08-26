@@ -16,7 +16,7 @@ cd claude
 # Report drift without changing anything
 bash scripts/setup-hosts.sh --check
 
-# Create only missing links and safe Codex config; refuse conflicts
+# Create only missing links and safe Codex config defaults; refuse conflicts
 bash scripts/setup-hosts.sh --apply
 
 # After reviewing conflicts, move them to timestamped backups and link them
@@ -28,6 +28,8 @@ git config filter.strip-ephemeral-state.smudge cat
 ```
 
 `--check` is read-only and exits nonzero when drift exists. `--apply` never replaces a real path or wrong symlink. `--adopt` is the only replacement mode, and it moves every conflict to an adjacent `<path>.bak.<timestamp>` backup instead of deleting it. The existing `scripts/setup-symlinks.sh` command remains a Claude-only compatibility wrapper.
+
+For Codex, the bootstrap adds the shared-instruction fallback and a built-in TUI status line only when each setting is absent. It preserves an existing custom status line.
 
 ## What's inside
 

@@ -202,10 +202,15 @@ manage_link() {
 manage_codex_config() {
   CONFIG="$CODEX_DIR/config.toml"
   FALLBACK='project_doc_fallback_filenames = ["CLAUDE.md"]'
-  MANUAL="manually set TOML root: $FALLBACK"
+  STATUS_LINE='status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]'
+  FALLBACK_MANUAL="manually set TOML root: $FALLBACK"
+  STATUS_MANUAL="manually set under [tui]: $STATUS_LINE"
+  ADD_FALLBACK=1
+  ADD_STATUS=1
+  TUI_COUNT=0
 
   if [ -L "$CONFIG" ] || { [ -e "$CONFIG" ] && [ ! -f "$CONFIG" ]; }; then
-    report "codex/config.toml" "REFUSED" "must be a regular file; $MANUAL"
+    report "codex/config.toml" "REFUSED" "must be a regular file; $FALLBACK_MANUAL"
     mark_issue
     return
   fi
@@ -220,33 +225,79 @@ manage_codex_config() {
     KEY_COUNT=$(printf "%s\n" "$KEY_INFO" | awk 'NF { count++ } END { print count+0 }')
 
     if [ "$KEY_COUNT" -gt 1 ]; then
-      report "codex/config.toml" "REFUSED" "multiple fallback keys; $MANUAL"
+      report "codex/config.toml" "REFUSED" "multiple fallback keys; $FALLBACK_MANUAL"
       mark_issue
       return
     fi
     if [ "$KEY_COUNT" -eq 1 ]; then
       case "$KEY_INFO" in
         root:*'['*CLAUDE.md*']'*)
-          report "codex/config.toml" "OK" "fallback already includes CLAUDE.md"
-          return
+          ADD_FALLBACK=0
           ;;
         root:*)
-          report "codex/config.toml" "REFUSED" "fallback differs or is multiline; $MANUAL"
+          report "codex/config.toml" "REFUSED" "fallback differs or is multiline; $FALLBACK_MANUAL"
           mark_issue
           return
           ;;
         table:*)
-          report "codex/config.toml" "REFUSED" "fallback is not at TOML root; $MANUAL"
+          report "codex/config.toml" "REFUSED" "fallback is not at TOML root; $FALLBACK_MANUAL"
           mark_issue
           return
           ;;
       esac
     fi
+
+    STATUS_INFO=$(awk '
+      /^[[:space:]]*\[/ {
+        if (!seen_table) seen_table=1
+        in_tui = ($0 ~ /^[[:space:]]*\[tui\][[:space:]]*(#.*)?$/)
+      }
+      !seen_table && /^[[:space:]]*tui[.]status_line[[:space:]]*=/ { print "root:" $0 }
+      in_tui && /^[[:space:]]*status_line[[:space:]]*=/ { print "tui:" $0 }
+    ' "$CONFIG")
+    STATUS_COUNT=$(printf "%s\n" "$STATUS_INFO" | awk 'NF { count++ } END { print count+0 }')
+    TUI_COUNT=$(awk '/^[[:space:]]*\[tui\][[:space:]]*(#.*)?$/ { count++ } END { print count+0 }' "$CONFIG")
+
+    if [ "$STATUS_COUNT" -gt 1 ]; then
+      report "codex/config.toml" "REFUSED" "multiple status lines; $STATUS_MANUAL"
+      mark_issue
+      return
+    fi
+    if [ "$STATUS_COUNT" -eq 1 ]; then
+      ADD_STATUS=0
+    elif [ "$TUI_COUNT" -gt 1 ]; then
+      report "codex/config.toml" "REFUSED" "multiple [tui] tables; $STATUS_MANUAL"
+      mark_issue
+      return
+    elif [ "$TUI_COUNT" -eq 0 ]; then
+      TUI_AMBIGUOUS=$(awk '
+        /^[[:space:]]*\[/ { seen_table=1 }
+        /^[[:space:]]*\[tui[.]/ { found=1 }
+        !seen_table && /^[[:space:]]*tui[.]/ { found=1 }
+        END { print found+0 }
+      ' "$CONFIG")
+      if [ "$TUI_AMBIGUOUS" -eq 1 ]; then
+        report "codex/config.toml" "REFUSED" "nested or dotted tui config; $STATUS_MANUAL"
+        mark_issue
+        return
+      fi
+    fi
+  fi
+
+  if [ "$ADD_FALLBACK" -eq 0 ] && [ "$ADD_STATUS" -eq 0 ]; then
+    report "codex/config.toml" "OK" "fallback and status line configured"
+    return
   fi
 
   if [ "$MODE" = "check" ]; then
-    report "codex/config.toml" "MISSING" "would add root fallback key"
-    mark_issue
+    if [ "$ADD_FALLBACK" -eq 1 ]; then
+      report "codex/config.toml" "MISSING" "would add root fallback key"
+      mark_issue
+    fi
+    if [ "$ADD_STATUS" -eq 1 ]; then
+      report "codex/config.toml" "MISSING" "would add default status line"
+      mark_issue
+    fi
     return
   fi
 
@@ -264,13 +315,35 @@ manage_codex_config() {
       return
     fi
     if {
-      printf "%s\n" "$FALLBACK"
-      if [ -s "$CONFIG_BACKUP" ]; then
-        printf "\n"
-        awk '{ print }' "$CONFIG_BACKUP"
+      if [ "$ADD_FALLBACK" -eq 1 ]; then
+        printf "%s\n" "$FALLBACK"
       fi
+      if [ "$ADD_FALLBACK" -eq 1 ] && [ -s "$CONFIG_BACKUP" ]; then
+        printf "\n"
+      fi
+      awk -v add_status="$ADD_STATUS" -v prepended="$ADD_FALLBACK" -v status_line="$STATUS_LINE" '
+        { print }
+        add_status && $0 ~ /^[[:space:]]*\[tui\][[:space:]]*(#.*)?$/ {
+          print status_line
+          inserted=1
+        }
+        END {
+          if (add_status && !inserted) {
+            if (NR > 0 || prepended) print ""
+            print "[tui]"
+            print status_line
+          }
+        }
+      ' "$CONFIG_BACKUP"
     } > "$CONFIG"; then
-      report "codex/config.toml" "UPDATED" "backup: $CONFIG_BACKUP"
+      if [ "$ADD_FALLBACK" -eq 1 ] && [ "$ADD_STATUS" -eq 1 ]; then
+        CONFIG_CHANGE="added fallback and status line"
+      elif [ "$ADD_FALLBACK" -eq 1 ]; then
+        CONFIG_CHANGE="added root fallback"
+      else
+        CONFIG_CHANGE="added status line"
+      fi
+      report "codex/config.toml" "UPDATED" "$CONFIG_CHANGE; backup: $CONFIG_BACKUP"
     else
       FAILED_COPY=$(next_backup "$CONFIG.failed")
       mv "$CONFIG" "$FAILED_COPY" 2>/dev/null || true
@@ -278,8 +351,11 @@ manage_codex_config() {
       report "codex/config.toml" "FAILED" "write failed; original restored if possible"
       mark_issue
     fi
-  elif printf "%s\n" "$FALLBACK" > "$CONFIG"; then
-    report "codex/config.toml" "CREATED" "root fallback key"
+  elif {
+    printf "%s\n\n" "$FALLBACK"
+    printf "[tui]\n%s\n" "$STATUS_LINE"
+  } > "$CONFIG"; then
+    report "codex/config.toml" "CREATED" "root fallback and status line"
   else
     report "codex/config.toml" "FAILED" "could not create config"
     mark_issue
