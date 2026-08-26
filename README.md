@@ -1,10 +1,10 @@
-# Claude Code Configuration
+# Shared Agent Configuration
 
-Custom configuration for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns it into a disciplined engineering partner with structured workflows, strict guardrails, and domain-specific expertise.
+Shared behavioral configuration for Claude Code and Codex, with a compatible path for Pi. It provides structured workflows, safety boundaries, code standards, and reusable engineering skills from one repo.
 
-Out of the box, Claude Code is capable but generic. This repo adds opinionated defaults: a research -> grill -> build -> ship workflow, security boundaries, code standards, and 16 expert subagents that spawn based on task context. The result is more consistent, reviewable, and safe output.
+The root `AGENTS.md` is the concise shared instruction source. `skills/`, `rules/`, and the historical `.claude/state/` path are shared across agent hosts. Hooks, permissions, notifications, and subagent mechanics remain host-specific.
 
-The whole config is symlinked into `~/.claude/`, so edits to this repo apply to every Claude Code session. It contains global rules (`CLAUDE.md`, `rules/`), automation hooks, slash commands, subagent personas, and reusable workflow skills.
+Claude Code uses selective links under `~/.claude/`. Codex and Pi link their native instruction paths to `AGENTS.md`, while Codex and Pi discover the repo's skills through `~/.agents/skills`.
 
 ## Quick start
 
@@ -13,25 +13,31 @@ The whole config is symlinked into `~/.claude/`, so edits to this repo apply to 
 git clone git@github.com:domengabrovsek/claude.git
 cd claude
 
-# Dry-run first to see what would change, then apply
-bash scripts/setup-symlinks.sh --check
-bash scripts/setup-symlinks.sh
+# Report drift without changing anything
+bash scripts/setup-hosts.sh --check
+
+# Create only missing links and safe Codex config; refuse conflicts
+bash scripts/setup-hosts.sh --apply
+
+# After reviewing conflicts, move them to timestamped backups and link them
+bash scripts/setup-hosts.sh --apply --adopt
 
 # Strip ephemeral state Claude Code writes to settings.json at runtime
 git config filter.strip-ephemeral-state.clean 'jq "del(.feedbackSurveyState)" 2>/dev/null || cat'
 git config filter.strip-ephemeral-state.smudge cat
 ```
 
-Re-runs are safe: existing files are backed up to `<path>.bak.<timestamp>` before being replaced. A `SessionStart` hook warns if a symlink drifts later.
+`--check` is read-only and exits nonzero when drift exists. `--apply` never replaces a real path or wrong symlink. `--adopt` is the only replacement mode, and it moves every conflict to an adjacent `<path>.bak.<timestamp>` backup instead of deleting it. The existing `scripts/setup-symlinks.sh` command remains a Claude-only compatibility wrapper.
 
 ## What's inside
 
-- **`CLAUDE.md`** - core rules loaded every session (workflow, security, code standards). See [ADR 0001](docs/adr/0001-grill-driven-workflow.md).
-- **`rules/`** - modular instruction files `@`-imported into `CLAUDE.md`.
-- **`agents/`** - expert subagent personas spawned via the Agent tool. Routing in [`rules/agent-routing.md`](rules/agent-routing.md); full list in [`docs/agents.md`](docs/agents.md). See [ADR 0003](docs/adr/0003-agents-via-subagent-spawn.md).
-- **`skills/`** - reusable `/<skill>` workflows (`/grill-with-docs`, `/build`, `/ship`, `/debug`, `/research`, `/verify-done`, `/worktree`, …). Skills carrying a `> Source:` line are vendored from [mattpocock/skills](https://github.com/mattpocock/skills) and adapted to this repo's conventions (see ADR 0006).
-- **`hooks/`** - shell scripts wired into `settings.json` for `PreToolUse`, `PostToolUse`, `SessionStart`, `SessionEnd` events.
-- **`scripts/`** - utilities used by hooks and skills (`setup-symlinks.sh`, `statusline.sh`, `notify.sh`, `worktree-prune.sh`).
+- **`AGENTS.md`** - concise host-neutral instructions loaded by every supported host. See [ADR 0008](docs/adr/0008-share-agent-config-across-hosts.md).
+- **`CLAUDE.md`** - thin Claude Code adapter that imports `AGENTS.md` and Claude's modular rules.
+- **`rules/`** - detailed standards loaded directly by Claude Code and through the `rulebook` skill by other hosts.
+- **`agents/`** - Claude Code expert subagent personas. Equivalent host mechanics are deferred; routing is in [`rules/agent-routing.md`](rules/agent-routing.md).
+- **`skills/`** - shared workflows such as `grill-with-docs`, `build`, `debug`, `research`, and `verify-done`.
+- **`hooks/`** - Claude Code automation wired into `settings.json`; host-specific parity is deferred.
+- **`scripts/`** - the multi-host bootstrap, its Claude compatibility wrapper, and utilities used by hooks and skills.
 - **`docs/adr/`** - Architecture Decision Records.
 - **`references/`** - long-form checklists (security, testing) loaded by skills on demand.
 - **`templates/`** - boilerplate for new ADRs and docs.
