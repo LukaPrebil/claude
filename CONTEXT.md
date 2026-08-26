@@ -1,8 +1,50 @@
-# Claude Config
+# Agent Config
 
-The domain language for this repo's agent-orchestration model (how the main session delegates parallel work to spawned agents, and the two coordination shapes that delegation can take) and its skill model (how skills are invoked and layered).
+The domain language for this repo's multi-host configuration, agent-orchestration model (how the main session delegates parallel work to spawned agents, and the two coordination shapes that delegation can take), and skill model (how skills are invoked and layered).
 
 ## Language
+
+### Multi-host configuration
+
+**Agent host**:
+A coding-agent runtime that consumes this repo's shared instructions and skills, currently Claude Code and Codex, with Pi as a design target.
+_Avoid_: "agent" when referring to the runtime - reserve agent for a model-driven worker or session.
+
+**Shared instruction source**:
+The concise root `AGENTS.md`, which holds only always-needed host-neutral guidance loaded by every supported agent host.
+_Avoid_: "Codex instructions", "Claude rules" when the guidance applies across hosts.
+
+**Shared skill library**:
+The repo's `skills/` tree, exposed to Claude Code through `~/.claude/skills` and to Codex and Pi through the repo-owned `~/.agents/skills` symlink.
+_Avoid_: "Claude skills", "Codex skills" when the skill follows the shared Agent Skills format.
+
+**Compatibility notation**:
+Legacy Claude-oriented names in shared skills that each agent host interprets through its equivalent capability, including `/name`, `$ARGUMENTS`, `Agent`, and `SendMessage`.
+_Avoid_: host-specific skill copies created only to rename an equivalent invocation or tool.
+
+**Rulebook**:
+The shared router skill that loads applicable detailed standards from the existing `rules/` tree for hosts that do not discover those files directly.
+_Avoid_: copied or host-specific rule trees.
+
+**Host adapter**:
+Host-specific configuration that connects an agent host to the shared instruction source and translates only behavior that has no portable representation.
+_Avoid_: "copy", "fork" - adapters must not duplicate shared guidance.
+
+**Host bootstrap**:
+The multi-host installer that checks or creates the filesystem links connecting supported agent hosts to this repo.
+_Avoid_: "Codex setup script", "Claude setup script" for the shared installer.
+
+**Behavioral parity**:
+Equivalent host-neutral guidance and skills across supported agent hosts, even when invocation syntax differs.
+_Avoid_: "full parity" - hooks, permissions, and subagent mechanics are outside this boundary.
+
+**Mechanical parity**:
+Equivalent enforcement through host-specific hooks, permissions, notifications, and subagent configuration.
+_Avoid_: "behavioral rules" - this parity is enforced by the host rather than model attention.
+
+**Workflow state**:
+Cross-session research, plans, specs, and diaries shared by every agent host under the historical `.claude/state/` project path.
+_Avoid_: "Claude state" - the path is retained for compatibility, but ownership is multi-host.
 
 ### Agent orchestration
 
@@ -76,6 +118,15 @@ _Avoid_: "soft rules", "style guide".
 
 ## Relationships
 
+- Each **Agent host** loads the **Shared instruction source** through its **Host adapter**.
+- Each **Agent host** discovers the same **Shared skill library** through its native user-level path.
+- Each **Agent host** maps **Compatibility notation** to its native skill and teammate mechanisms.
+- The **Host bootstrap** installs every **Host adapter** while the legacy Claude setup command remains a compatibility entrypoint.
+- A **Host adapter** may add host-specific behavior but must not redefine shared guidance.
+- **Behavioral parity** is the first multi-host milestone; **Mechanical parity** is translated and verified separately for each host.
+- Every **Agent host** reads and writes the same **Workflow state** so work can move between hosts without conversion.
+- Detailed standards live in **Reusable disciplines** and load on demand rather than expanding the **Shared instruction source**.
+- The **Rulebook** exposes detailed `rules/` standards as one **Reusable discipline** without changing their source location.
 - A **Teammate** runs in either **Lane mode** or **Panel mode**.
 - Our repo keeps **Orchestrators** at the **Model-invoked** layer (grill and build auto-fire as workflow phases); only `wayfinder` is a **User-invoked** orchestrator.
 - A **Reusable discipline** is always **Model-invoked**; an **Orchestrator** may invoke disciplines.
@@ -93,5 +144,6 @@ _Avoid_: "soft rules", "style guide".
 
 ## Flagged ambiguities
 
+- "Agent" was used for both the coding runtime and a model-driven worker - resolved: the runtime is an **Agent host**; a named worker is a **Teammate**.
 - "subagent" was used for both the generic spawn mechanism and a named agent - resolved: a named agent is a **Teammate**; "subagent" refers only to the generic Agent-tool spawn.
 - "skill" was used for both sequencing workflows and single practices - resolved: a sequencing skill is an **Orchestrator**, a single-practice skill is a **Reusable discipline**.
