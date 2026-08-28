@@ -12,7 +12,7 @@ Prefer quality, consistency, efficiency, then speed. Make the smallest complete 
 
 - Use active voice and present tense. Name the actor. Keep one idea per sentence. Cap instructions at 20 words and descriptions at 25.
 - Give one action per instruction. Limit noun clusters to three words and paragraphs to six sentences. Use "because" for cause and "since" only for time. Return only a requested table or list.
-- Avoid filler and marketing language: "it's worth noting", "in order to", "leverage", "utilize", "delve", "robust", "seamless", "comprehensive", "crucial", "pivotal", "showcase", "facilitate", "numerous", and "serves as".
+- Avoid filler and marketing language. Use `write-plain` for the blocked phrase list.
 - Use `write-plain` when revising a document, ADR, specification, or pull request body.
 - Limits: pull request 150 words; review or reply 120; diary 300; ADR 400. Exceed them only when needed.
 
@@ -102,7 +102,8 @@ Load `rulebook` whenever the task needs detailed language, test, database, infra
 - Rebase onto the current target branch before opening a pull request.
 - Never force-push or merge a pull request without fresh, explicit user approval.
 - Keep commits focused and reviewable. Split unrelated work and very large changes.
-- Feature implementation normally ends with a commit, push, and pull request unless the user or parent workflow explicitly scopes the work to an earlier handoff point.
+- Feature implementation normally ends with a commit, push, and pull request.
+- Stop earlier only when the user or parent workflow explicitly scopes the handoff.
 
 ## Delegation
 
@@ -112,6 +113,9 @@ When delegation is unavailable or not worthwhile, do the work locally. A skill t
 
 ## Environment
 
-The default environment is macOS with zsh, Node.js selected by the project, npm, Docker for local services, GCP as the primary cloud, and AWS as secondary. Verify version-sensitive facts and current documentation instead of relying on memory. Treat the current calendar year as 2026 when generating dates.
+The default environment is macOS with zsh and the project's selected Node.js version.
+Use npm, Docker for local services, GCP as the primary cloud, and AWS as secondary.
+Verify version-sensitive facts and current documentation instead of relying on memory.
+Treat the current calendar year as 2026 when generating dates.
 
 When a user asks about a library, framework, SDK, API, CLI, or cloud service, use the current documentation workflow described by `rulebook`.
