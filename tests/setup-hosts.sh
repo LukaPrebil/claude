@@ -79,6 +79,15 @@ run_setup() {
     bash "$SETUP" "$@"
 }
 
+run_setup_with_pi_dir() {
+  PI_CODING_AGENT_DIR="$1" \
+  HOME="$TEST_HOME" \
+  CODEX_HOME="$TEST_HOME/.codex" \
+  CLAUDE_CONFIG_DIR="$TEST_HOME/.claude" \
+  CLAUDE_DOTFILES_REPO="$TEST_REPO" \
+    bash "$SETUP" "${@:2}"
+}
+
 run_wrapper() {
   HOME="$TEST_HOME" \
   CODEX_HOME="$TEST_HOME/.codex" \
@@ -132,6 +141,45 @@ assert_true "shared skills are repo-owned" assert_link "$TEST_HOME/.agents/skill
 assert_true "Codex fallback is created" grep -Fq 'project_doc_fallback_filenames = ["CLAUDE.md"]' "$TEST_HOME/.codex/config.toml"
 assert_true "Codex status line is created" grep -Fq 'status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]' "$TEST_HOME/.codex/config.toml"
 assert_success "clean check exits zero" run_setup --check
+
+# A Pi-only selection includes every shared resource Pi needs.
+new_case pi_only
+assert_success "Pi-only apply succeeds" run_setup --apply --host pi
+assert_true "Pi-only apply links instructions" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi-only apply links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
+assert_true "Pi-only apply skips Codex" test ! -e "$TEST_HOME/.codex"
+assert_success "Pi-only check exits zero" run_setup --check --host pi
+assert_success "Pi-only re-apply is idempotent" run_setup --apply --host pi
+assert_true "Pi-only re-apply creates no instruction backup" test "$(backup_count "$TEST_HOME/.pi/agent/AGENTS.md")" -eq 0
+assert_true "Pi-only re-apply creates no skill backup" test "$(backup_count "$TEST_HOME/.agents/skills")" -eq 0
+
+# Pi follows its native config-directory override.
+new_case pi_custom_dir
+CUSTOM_PI_DIR="$CASE_DIR/custom-pi"
+assert_success "Pi custom directory apply succeeds" run_setup_with_pi_dir "$CUSTOM_PI_DIR" --apply --host pi
+assert_true "Pi custom directory receives instructions" assert_link "$CUSTOM_PI_DIR/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi default directory stays absent" test ! -e "$TEST_HOME/.pi"
+assert_true "Pi custom directory still gets shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
+assert_success "Pi custom directory check exits zero" run_setup_with_pi_dir "$CUSTOM_PI_DIR" --check --host pi
+
+# Pi-only adoption recovers both host and shared-resource conflicts.
+new_case pi_only_adopt
+mkdir -p "$TEST_HOME/.pi/agent" "$TEST_HOME/.agents/skills"
+printf "local instructions\n" > "$TEST_HOME/.pi/agent/AGENTS.md"
+printf "local skill\n" > "$TEST_HOME/.agents/skills/local-skill"
+assert_failure "Pi-only apply refuses conflicts" run_setup --apply --host pi
+assert_success "Pi-only adopt resolves conflicts" run_setup --apply --adopt --host pi
+assert_true "Pi-only adopt links instructions" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi-only adopt links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
+assert_true "Pi-only adopt backs up instructions" test "$(backup_count "$TEST_HOME/.pi/agent/AGENTS.md")" -eq 1
+assert_true "Pi-only adopt backs up shared skills" test "$(backup_count "$TEST_HOME/.agents/skills")" -eq 1
+
+# A Codex-only selection includes the shared skills it discovers.
+new_case codex_only
+assert_success "Codex-only apply succeeds" run_setup --apply --host codex
+assert_true "Codex-only apply links instructions" assert_link "$TEST_HOME/.codex/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Codex-only apply links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
+assert_true "Codex-only apply skips Pi" test ! -e "$TEST_HOME/.pi"
 
 # Re-applying makes no backups or content changes.
 new_case idempotent

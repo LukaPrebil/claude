@@ -24,6 +24,7 @@ Environment:
   CLAUDE_DOTFILES_REPO Backward-compatible repo override.
   CLAUDE_CONFIG_DIR    Claude config directory (default: ~/.claude).
   CODEX_HOME           Codex config directory (default: ~/.codex).
+  PI_CODING_AGENT_DIR  Pi config directory (default: ~/.pi/agent).
 EOF
 }
 
@@ -92,7 +93,7 @@ REPO=$(cd "$REPO" && pwd)
 
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
-PI_DIR="$HOME/.pi/agent"
+PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 SHARED_DIR="$HOME/.agents"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ISSUES=0
@@ -393,7 +394,7 @@ if host_enabled pi; then
   manage_link "pi/AGENTS.md" "$PI_DIR/AGENTS.md" "$REPO/AGENTS.md"
 fi
 
-if host_enabled shared; then
+if host_enabled shared || [ "$HOST" = "codex" ] || [ "$HOST" = "pi" ]; then
   manage_link "shared/skills" "$SHARED_DIR/skills" "$REPO/skills"
 fi
 

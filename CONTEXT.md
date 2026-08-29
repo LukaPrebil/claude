@@ -7,7 +7,7 @@ The domain language for this repo's multi-host configuration, agent-orchestratio
 ### Multi-host configuration
 
 **Agent host**:
-A coding-agent runtime that consumes this repo's shared instructions and skills, currently Claude Code and Codex, with Pi as a design target.
+A coding-agent runtime that consumes this repo's shared instructions and skills, currently Claude Code, Codex, and Pi.
 _Avoid_: "agent" when referring to the runtime - reserve agent for a model-driven worker or session.
 
 **Shared instruction source**:
@@ -122,8 +122,10 @@ _Avoid_: "soft rules", "style guide".
 - Each **Agent host** discovers the same **Shared skill library** through its native user-level path.
 - Each **Agent host** maps **Compatibility notation** to its native skill and teammate mechanisms.
 - The **Host bootstrap** installs every **Host adapter** while the legacy Claude setup command remains a compatibility entrypoint.
+- The **Host bootstrap** leaves provider, model, and credential choices to each **Agent host** user.
 - A **Host adapter** may add host-specific behavior but must not redefine shared guidance.
 - **Behavioral parity** is the first multi-host milestone; **Mechanical parity** is translated and verified separately for each host.
+- **Behavioral parity** covers interactive and non-interactive modes supported by each **Agent host**.
 - Every **Agent host** reads and writes the same **Workflow state** so work can move between hosts without conversion.
 - Detailed standards live in **Reusable disciplines** and load on demand rather than expanding the **Shared instruction source**.
 - The **Rulebook** exposes detailed `rules/` standards as one **Reusable discipline** without changing their source location.
@@ -145,5 +147,7 @@ _Avoid_: "soft rules", "style guide".
 ## Flagged ambiguities
 
 - "Agent" was used for both the coding runtime and a model-driven worker - resolved: the runtime is an **Agent host**; a named worker is a **Teammate**.
+- Pi was described as a design target - resolved: Pi is a supported **Agent host** within the **Behavioral parity** boundary.
+- "Full Pi support" was ambiguous - resolved: Pi loads shared behavior in every native mode; teammate mechanics remain a documented **Mechanical parity** gap.
 - "subagent" was used for both the generic spawn mechanism and a named agent - resolved: a named agent is a **Teammate**; "subagent" refers only to the generic Agent-tool spawn.
 - "skill" was used for both sequencing workflows and single practices - resolved: a sequencing skill is an **Orchestrator**, a single-practice skill is a **Reusable discipline**.

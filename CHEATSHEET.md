@@ -82,4 +82,4 @@ These run independently of the implementation workflow:
 
 ## Agents
 
-Claude Code agents auto-spawn via `rules/agent-routing.md` when a task touches a specialized domain. Codex maps `Agent` and `SendMessage` references to its teammate mechanisms when available, and follows the workflow locally otherwise. Pi-specific subagent mechanics are deferred. See [ADR 0008](docs/adr/0008-share-agent-config-across-hosts.md) for the shared boundary.
+Claude Code agents auto-spawn via `rules/agent-routing.md` when a task touches a specialized domain. Codex maps `Agent` and `SendMessage` references to its teammate mechanisms when available, and follows the workflow locally otherwise. Pi follows the workflow locally because its teammate mechanics are deferred. See [ADR 0008](docs/adr/0008-share-agent-config-across-hosts.md) for the shared boundary.
