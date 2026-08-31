@@ -50,6 +50,10 @@ _Avoid_: "Claude permissions" (hosts other than Claude consume it), "blocklist".
 pi's mechanical enforcement of the Deny list by intercepting model tool calls before execution.
 _Avoid_: "sandbox", "security boundary" - an in-process gate is friction, not isolation.
 
+**Drift**:
+A host's links diverging from the checkout; the Host bootstrap detects it with `--check` and repairs it with `--apply`.
+_Avoid_: "config drift", "stale links", "out-of-sync".
+
 **Workflow state**:
 Cross-session research, plans, specs, and diaries shared by every agent host under the historical `.claude/state/` project path.
 _Avoid_: "Claude state" - the path is retained for compatibility, but ownership is multi-host.
@@ -135,6 +139,7 @@ _Avoid_: "soft rules", "style guide".
 - **Behavioral parity** is the first multi-host milestone; **Mechanical parity** is translated and verified separately for each host.
 - A **Permission gate** enforces the **Deny list** on one Agent host; rules without a translation for that host are surfaced, not silently dropped.
 - All hosts translate one canonical **Deny list**; a host may enforce a superset, never a subset.
+- **Drift** between the checkout and a host is surfaced at that host's session start.
 - **Behavioral parity** covers interactive and non-interactive modes supported by each **Agent host**.
 - Every **Agent host** reads and writes the same **Workflow state** so work can move between hosts without conversion.
 - Detailed standards live in **Reusable disciplines** and load on demand rather than expanding the **Shared instruction source**.
