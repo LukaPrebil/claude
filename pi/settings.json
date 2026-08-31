@@ -1,0 +1,19 @@
+{
+  "theme": "dark",
+  "compaction": {
+    "enabled": false
+  },
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "markdown": {
+    "mermaid": "streaming"
+  },
+  "showCacheMissNotices": true,
+  "enableInstallTelemetry": false,
+  "packages": [
+    "npm:pi-ollama-cloud"
+  ],
+  "defaultProvider": "ollama-cloud",
+  "defaultModel": "glm-5.3-flash"
+}
