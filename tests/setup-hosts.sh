@@ -77,6 +77,8 @@ new_case() {
 run_setup() {
   PI_CONFIG_DIRS="$TEST_HOME/.pi/agent $TEST_HOME/.pi-personal/agent" \
   PI_CODING_AGENT_DIR="" \
+  CLAUDE_CONFIG_DIR="" \
+  CLAUDE_CONFIG_DIRS="$TEST_HOME/.claude $TEST_HOME/.claude-personal" \
   HOME="$TEST_HOME" \
   CODEX_HOME="$TEST_HOME/.codex" \
   CLAUDE_CONFIG_DIR="$TEST_HOME/.claude" \
@@ -140,6 +142,14 @@ docs|docs
 references|references
 statusline.sh|scripts/statusline.sh
 pull_request_template.md|.github/pull_request_template.md
+EOF
+while IFS='|' read -r NAME RELATIVE; do
+  assert_true "Claude personal dir gets $NAME" assert_link "$TEST_HOME/.claude-personal/$NAME" "$TEST_REPO/$RELATIVE"
+done <<'EOF'
+CLAUDE.md|CLAUDE.md
+settings.json|settings.json
+hooks|hooks
+rules|rules
 EOF
 assert_true "Codex AGENTS.md is shared" assert_link "$TEST_HOME/.codex/AGENTS.md" "$TEST_REPO/AGENTS.md"
 assert_true "Pi base dir receives instructions and resources" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json"

@@ -4,7 +4,7 @@ Shared behavioral configuration for Claude Code, Codex, and Pi. It provides stru
 
 The root `AGENTS.md` is the concise shared instruction source. `skills/`, `rules/`, and the historical `.claude/state/` path are shared across agent hosts. Hooks, permissions, notifications, and teammate mechanics remain host-specific.
 
-Claude Code uses selective links under `~/.claude/`. Codex and Pi link their native instruction paths to `AGENTS.md`, while Codex and Pi discover the repo's skills through `~/.agents/skills`.
+Claude Code uses selective links under `~/.claude/` plus a second account dir (default `~/.claude-personal`) via `CLAUDE_CONFIG_DIRS`. Codex and Pi link their native instruction paths to `AGENTS.md`, while Codex and Pi discover the repo's skills through `~/.agents/skills`.
 
 ## Quick start
 

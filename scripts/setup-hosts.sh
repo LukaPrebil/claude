@@ -23,6 +23,7 @@ Environment:
   AGENT_CONFIG_REPO     Repo to link (preferred generic override).
   CLAUDE_DOTFILES_REPO Backward-compatible repo override.
   CLAUDE_CONFIG_DIR    Claude config directory (default: ~/.claude).
+  CLAUDE_CONFIG_DIRS   Space-separated claude dir list; overrides CLAUDE_CONFIG_DIR.
   CODEX_HOME           Codex config directory (default: ~/.codex).
   PI_CONFIG_DIRS       Space-separated pi config dirs. Wins over PI_CODING_AGENT_DIR.
   PI_CODING_AGENT_DIR  Single pi config directory override (default: ~/.pi/agent).
@@ -378,11 +379,24 @@ else
   PI_DIRS="$HOME/.pi/agent $HOME/.pi-personal/agent"
 fi
 
+# Claude links every configured config dir. Explicit: CLAUDE_CONFIG_DIRS
+# (space-separated list). Compatibility: CLAUDE_CONFIG_DIR links one dir.
+# Default: the base dir plus the personal-account dir.
+if [ -n "${CLAUDE_CONFIG_DIRS:-}" ]; then
+  CLAUDE_DIRS="$CLAUDE_CONFIG_DIRS"
+elif [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  CLAUDE_DIRS="$CLAUDE_CONFIG_DIR"
+else
+  CLAUDE_DIRS="$HOME/.claude $HOME/.claude-personal"
+fi
+
 if host_enabled claude; then
-  while IFS='|' read -r NAME RELATIVE; do
-    [ -n "$NAME" ] || continue
-    manage_link "claude/$NAME" "$CLAUDE_DIR/$NAME" "$REPO/$RELATIVE"
-  done <<'EOF'
+  for CLAUDE_DIR in $CLAUDE_DIRS; do
+    TAG="$(printf %s "$CLAUDE_DIR" | sed "s#^$HOME#~#")"
+    while IFS='|' read -r NAME RELATIVE; do
+      [ -n "$NAME" ] || continue
+      manage_link "$TAG/$NAME" "$CLAUDE_DIR/$NAME" "$REPO/$RELATIVE"
+    done <<'EOF'
 CLAUDE.md|CLAUDE.md
 settings.json|settings.json
 agents|agents
@@ -395,6 +409,7 @@ references|references
 statusline.sh|scripts/statusline.sh
 pull_request_template.md|.github/pull_request_template.md
 EOF
+  done
 fi
 
 if host_enabled codex; then
