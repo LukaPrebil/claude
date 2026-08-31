@@ -7,7 +7,7 @@ The domain language for this repo's multi-host configuration, agent-orchestratio
 ### Multi-host configuration
 
 **Agent host**:
-A coding-agent runtime that consumes this repo's shared instructions and skills, currently Claude Code, Codex, and Pi.
+A coding-agent runtime that consumes this repo's shared instructions and skills, currently Claude Code, Codex, and Pi. Called a **harness** in repo naming and prose; the two words are synonyms.
 _Avoid_: "agent" when referring to the runtime - reserve agent for a model-driven worker or session.
 
 **Shared instruction source**:
@@ -146,6 +146,7 @@ _Avoid_: "soft rules", "style guide".
 
 ## Flagged ambiguities
 
+- "harness" and "host" named the same runtime - resolved: synonyms; prose and the repo name say **harness**, while inherited script names, flags, and upstream-shared files keep "host" so merges stay conflict-free.
 - "Agent" was used for both the coding runtime and a model-driven worker - resolved: the runtime is an **Agent host**; a named worker is a **Teammate**.
 - Pi was described as a design target - resolved: Pi is a supported **Agent host** within the **Behavioral parity** boundary.
 - "Full Pi support" was ambiguous - resolved: Pi loads shared behavior in every native mode; teammate mechanics remain a documented **Mechanical parity** gap.
