@@ -28,6 +28,11 @@ Environment:
   PI_CONFIG_DIRS       Space-separated pi config dirs. Wins over PI_CODING_AGENT_DIR.
   PI_CODING_AGENT_DIR  Single pi config directory override (default: ~/.pi/agent).
                        With neither set, both personal and base dirs are linked.
+  AGENT_HOSTS_ENV      Machine-local scope file (default: ~/.agents/hosts.env).
+                       Sourced when present, so an argument-free --check knows
+                       which dirs and hosts this machine actually uses.
+  HARNESS_SKIP_HOSTS   Space-separated hosts to skip when --host is all.
+                       An explicit --host always wins over this list.
 EOF
 }
 
@@ -73,6 +78,17 @@ case "$HOST" in
   *) echo "Unknown host: $HOST" >&2; exit 2 ;;
 esac
 
+# A machine records its own host scope here so later runs do not re-derive it.
+# The drift-check extension invokes this script with no arguments and no
+# environment, so without this file it would rediscover the two-dir defaults
+# and report permanent drift on dirs the machine never adopted. Entries use
+# the := form, which leaves a real environment variable untouched.
+SCOPE_FILE="${AGENT_HOSTS_ENV:-$HOME/.agents/hosts.env}"
+if [ -f "$SCOPE_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$SCOPE_FILE"
+fi
+
 if [ -n "${AGENT_CONFIG_REPO:-}" ]; then
   REPO="$AGENT_CONFIG_REPO"
 elif [ -n "${CLAUDE_DOTFILES_REPO:-}" ]; then
@@ -101,7 +117,13 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ISSUES=0
 
 host_enabled() {
-  [ "$HOST" = "all" ] || [ "$HOST" = "$1" ]
+  if [ "$HOST" = "all" ]; then
+    case " ${HARNESS_SKIP_HOSTS:-} " in
+      *" $1 "*) return 1 ;;
+    esac
+    return 0
+  fi
+  [ "$HOST" = "$1" ]
 }
 
 report() {
