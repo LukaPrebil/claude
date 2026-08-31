@@ -69,18 +69,23 @@ new_case() {
   : > "$TEST_REPO/settings.json"
   : > "$TEST_REPO/scripts/statusline.sh"
   : > "$TEST_REPO/.github/pull_request_template.md"
+  mkdir -p "$TEST_REPO/pi/extensions"
+  : > "$TEST_REPO/pi/settings.json"
+  : > "$TEST_REPO/pi/extensions/statusline.ts"
 }
 
 run_setup() {
+  PI_CONFIG_DIRS="$TEST_HOME/.pi/agent $TEST_HOME/.pi-personal/agent" \
+  PI_CODING_AGENT_DIR="" \
   HOME="$TEST_HOME" \
   CODEX_HOME="$TEST_HOME/.codex" \
   CLAUDE_CONFIG_DIR="$TEST_HOME/.claude" \
   AGENT_CONFIG_REPO="$TEST_REPO" \
-  PI_CODING_AGENT_DIR="$TEST_HOME/.pi/agent" \
     bash "$SETUP" "$@"
 }
 
 run_setup_with_pi_dir() {
+  PI_CONFIG_DIRS="" \
   PI_CODING_AGENT_DIR="$1" \
   HOME="$TEST_HOME" \
   CODEX_HOME="$TEST_HOME/.codex" \
@@ -137,7 +142,8 @@ statusline.sh|scripts/statusline.sh
 pull_request_template.md|.github/pull_request_template.md
 EOF
 assert_true "Codex AGENTS.md is shared" assert_link "$TEST_HOME/.codex/AGENTS.md" "$TEST_REPO/AGENTS.md"
-assert_true "Pi AGENTS.md is shared" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi base dir receives instructions and resources" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "Pi personal dir receives instructions and resources" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json"
 assert_true "shared skills are repo-owned" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Codex fallback is created" grep -Fq 'project_doc_fallback_filenames = ["CLAUDE.md"]' "$TEST_HOME/.codex/config.toml"
 assert_true "Codex status line is created" grep -Fq 'status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]' "$TEST_HOME/.codex/config.toml"
@@ -147,6 +153,7 @@ assert_success "clean check exits zero" run_setup --check
 new_case pi_only
 assert_success "Pi-only apply succeeds" run_setup --apply --host pi
 assert_true "Pi-only apply links instructions" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi-only apply links the personal dir too" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json"
 assert_true "Pi-only apply links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Pi-only apply skips Codex" test ! -e "$TEST_HOME/.codex"
 assert_success "Pi-only check exits zero" run_setup --check --host pi
@@ -159,20 +166,25 @@ new_case pi_custom_dir
 CUSTOM_PI_DIR="$CASE_DIR/custom-pi"
 assert_success "Pi custom directory apply succeeds" run_setup_with_pi_dir "$CUSTOM_PI_DIR" --apply --host pi
 assert_true "Pi custom directory receives instructions" assert_link "$CUSTOM_PI_DIR/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi custom directory receives extension and settings links" assert_link "$CUSTOM_PI_DIR/extensions" "$TEST_REPO/pi/extensions" && assert_link "$CUSTOM_PI_DIR/settings.json" "$TEST_REPO/pi/settings.json"
 assert_true "Pi default directory stays absent" test ! -e "$TEST_HOME/.pi"
 assert_true "Pi custom directory still gets shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_success "Pi custom directory check exits zero" run_setup_with_pi_dir "$CUSTOM_PI_DIR" --check --host pi
 
-# Pi-only adoption recovers both host and shared-resource conflicts.
+# Pi-only adoption recovers both host and shared-resource conflicts across
+# every configured agent dir.
 new_case pi_only_adopt
-mkdir -p "$TEST_HOME/.pi/agent" "$TEST_HOME/.agents/skills"
+mkdir -p "$TEST_HOME/.pi/agent" "$TEST_HOME/.pi-personal/agent" "$TEST_HOME/.agents/skills"
 printf "local instructions\n" > "$TEST_HOME/.pi/agent/AGENTS.md"
+printf "personal instructions\n" > "$TEST_HOME/.pi-personal/agent/AGENTS.md"
 printf "local skill\n" > "$TEST_HOME/.agents/skills/local-skill"
 assert_failure "Pi-only apply refuses conflicts" run_setup --apply --host pi
 assert_success "Pi-only adopt resolves conflicts" run_setup --apply --adopt --host pi
 assert_true "Pi-only adopt links instructions" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
+assert_true "Pi-only adopt links personal instructions" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
 assert_true "Pi-only adopt links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Pi-only adopt backs up instructions" test "$(backup_count "$TEST_HOME/.pi/agent/AGENTS.md")" -eq 1
+assert_true "Pi-only adopt backs up personal instructions" test "$(backup_count "$TEST_HOME/.pi-personal/agent/AGENTS.md")" -eq 1
 assert_true "Pi-only adopt backs up shared skills" test "$(backup_count "$TEST_HOME/.agents/skills")" -eq 1
 
 # A Codex-only selection includes the shared skills it discovers.

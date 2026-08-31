@@ -24,7 +24,9 @@ Environment:
   CLAUDE_DOTFILES_REPO Backward-compatible repo override.
   CLAUDE_CONFIG_DIR    Claude config directory (default: ~/.claude).
   CODEX_HOME           Codex config directory (default: ~/.codex).
-  PI_CODING_AGENT_DIR  Pi config directory (default: ~/.pi/agent).
+  PI_CONFIG_DIRS       Space-separated pi config dirs. Wins over PI_CODING_AGENT_DIR.
+  PI_CODING_AGENT_DIR  Single pi config directory override (default: ~/.pi/agent).
+                       With neither set, both personal and base dirs are linked.
 EOF
 }
 
@@ -93,7 +95,6 @@ REPO=$(cd "$REPO" && pwd)
 
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
-PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 SHARED_DIR="$HOME/.agents"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ISSUES=0
@@ -366,6 +367,17 @@ manage_codex_config() {
 printf "%-34s %-13s %s\n" "PATH" "STATE" "DETAIL"
 printf "%-34s %-13s %s\n" "----" "-----" "------"
 
+# Pi links every configured agent dir. Explicit: PI_CONFIG_DIRS (whitespace
+# separated list). Compatibility: PI_CODING_AGENT_DIR (single dir). Default:
+# the base dir plus the personal-account dir the account-switcher shim uses.
+if [ -n "${PI_CONFIG_DIRS:-}" ]; then
+  PI_DIRS="$PI_CONFIG_DIRS"
+elif [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
+  PI_DIRS="$PI_CODING_AGENT_DIR"
+else
+  PI_DIRS="$HOME/.pi/agent $HOME/.pi-personal/agent"
+fi
+
 if host_enabled claude; then
   while IFS='|' read -r NAME RELATIVE; do
     [ -n "$NAME" ] || continue
@@ -391,7 +403,12 @@ if host_enabled codex; then
 fi
 
 if host_enabled pi; then
-  manage_link "pi/AGENTS.md" "$PI_DIR/AGENTS.md" "$REPO/AGENTS.md"
+  for PI_DIR in $PI_DIRS; do
+    TAG="${PI_DIR/#$HOME/\~}"
+    manage_link "$TAG/AGENTS.md" "$PI_DIR/AGENTS.md" "$REPO/AGENTS.md"
+    manage_link "$TAG/extensions" "$PI_DIR/extensions" "$REPO/pi/extensions"
+    manage_link "$TAG/settings.json" "$PI_DIR/settings.json" "$REPO/pi/settings.json"
+  done
 fi
 
 if host_enabled shared || [ "$HOST" = "codex" ] || [ "$HOST" = "pi" ]; then
