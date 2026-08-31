@@ -164,7 +164,7 @@ _Avoid_: "soft rules", "style guide".
 - "harness" and "host" named the same runtime - resolved: synonyms; prose and the repo name say **harness**, while inherited script names, flags, and upstream-shared files keep "host" so merges stay conflict-free.
 - "Agent" was used for both the coding runtime and a model-driven worker - resolved: the runtime is an **Agent host**; a named worker is a **Teammate**.
 - Pi was described as a design target - resolved: Pi is a supported **Agent host** within the **Behavioral parity** boundary.
-- "Full Pi support" was ambiguous - resolved: Pi loads shared behavior in every native mode; lane-mode **Teammate** spawning carries mechanical parity since the teammates adapter, while SendMessage/panel coordination remains the gap.
+- "Full Pi support" was ambiguous - resolved: Pi loads shared behavior in every native mode; **Teammate** spawning (including background runs and panel-style steering) carries mechanical parity through the `pi-subagents` package.
 - "subagent" was used for both the generic spawn mechanism and a named agent - resolved: a named agent is a **Teammate**; "subagent" refers only to the generic Agent-tool spawn.
 - "skill" was used for both sequencing workflows and single practices - resolved: a sequencing skill is an **Orchestrator**, a single-practice skill is a **Reusable discipline**.
 - "full permission parity for pi" was ambiguous - resolved: the pi **Permission gate** enforces a **superset** of the **Deny list** on file tools (Edit rules also bind writes; bash matching covers command segments), so any parity claim names its direction.
