@@ -1,0 +1,43 @@
+# Manual releases: version computed from conventional commits since the
+# last tag; a bot commit carries CHANGELOG.md and the package version.
+# See docs/adr/0011-semantic-release-on-manual-dispatch.md.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview the computed release without creating it
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Cut release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Cut release
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARGS=""
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          docker run --rm \
+            -v "$PWD:/home/node/app" \
+            -e GITHUB_TOKEN \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=safe.directory \
+            -e GIT_CONFIG_VALUE_0=/home/node/app \
+            ghcr.io/semantic-release/semantic-release:v25.0.9 "$ARGS"
