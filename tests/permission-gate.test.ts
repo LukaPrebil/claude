@@ -5,8 +5,11 @@
  * pi cannot enforce fail here instead of silently skipping at runtime.
  */
 
+// Lives under tests/ (not pi/extensions/) because pi auto-discovers every
+// *.ts directly inside extensions/ and would load this file as an extension.
+
 import assert from 'node:assert/strict';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -19,8 +22,9 @@ import {
   loadGateConfig,
   matchBash,
   matchPath,
+  resolvePermissionSource,
   type GateRule,
-} from './permission-gate.ts';
+} from '../pi/extensions/permission-gate.ts';
 
 const rule = (source: string): GateRule => {
   const classified = classifyRule(source);
@@ -184,7 +188,7 @@ describe('matchBash', () => {
 });
 
 describe('loadGateConfig (drift alarm)', () => {
-  const settingsPath = resolve(import.meta.dirname, '../../settings.json');
+  const settingsPath = resolve(import.meta.dirname, '../settings.json');
 
   it('translates every deny rule in the real settings.json or lists it as expected skip', () => {
     const expectedSkips = ['mcp__claude_ai_Atlassian__*'];
@@ -204,7 +208,7 @@ describe('loadGateConfig (drift alarm)', () => {
 
   it('reports missing and broken sources without throwing', () => {
     assert.equal(loadGateConfig('/nonexistent/settings.json').status, 'missing');
-    assert.equal(loadGateConfig(join(import.meta.dirname, 'permission-gate.test.ts')).status, 'error');
+    assert.equal(loadGateConfig(join(import.meta.dirname, 'setup-hosts.sh')).status, 'error');
   });
 
   it('treats a permissions block without a deny list as empty', () => {
@@ -215,5 +219,45 @@ describe('loadGateConfig (drift alarm)', () => {
     } finally {
       rmSync(fixturePath);
     }
+  });
+});
+
+describe('resolvePermissionSource', () => {
+  const scratch = (): string => mkdtempSync(join(tmpdir(), 'permission-gate-select-'));
+
+  it('picks the first candidate that carries a permissions block', () => {
+    const dir = scratch();
+    const noPerms = join(dir, 'pi-settings.json');
+    const withPerms = join(dir, 'settings.json');
+    writeFileSync(noPerms, JSON.stringify({ theme: 'dark' }));
+    writeFileSync(withPerms, JSON.stringify({ permissions: { deny: ['Read(**/.env)'] } }));
+    try {
+      const selection = resolvePermissionSource(['/nonexistent.json', noPerms, withPerms]);
+      assert.equal(selection.status, 'ok');
+      if (selection.status === 'ok') {
+        assert.equal(selection.path, withPerms);
+        assert.equal(selection.config.rules.length, 1);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays unavailable and names the failure when nothing qualifies', () => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'broken.json'), '{ not json');
+    try {
+      const selection = resolvePermissionSource([join(dir, 'broken.json')]);
+      assert.equal(selection.status, 'unavailable');
+      if (selection.status === 'unavailable') assert.match(selection.reason, /unreadable|not an object|empty/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports missing when no candidate even exists', () => {
+    const selection = resolvePermissionSource(['/nonexistent-a.json', '/nonexistent-b.json']);
+    assert.equal(selection.status, 'unavailable');
+    if (selection.status === 'unavailable') assert.match(selection.reason, /no permission source found/);
   });
 });

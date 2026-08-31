@@ -28,7 +28,7 @@
  * @earendil-works/pi-coding-agent dynamically at runtime.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,25 +120,19 @@ export function compilePathGlob(pattern: string): RegExp {
 }
 
 /**
- * Compile a bash pattern. A leading `*` searches anywhere; otherwise the
- * pattern anchors at a segment start. `~` inside the pattern compiles twice
- * (literal and home-expanded), because the model types both spellings.
+ * Compile a bash pattern. A leading star searches anywhere; otherwise the
+ * pattern anchors at a segment start. A tilde inside the pattern compiles
+ * twice (literal and home-expanded), because the model types both spellings.
  */
 export function compileBashRule(pattern: string): RegExp {
-  const compile = (body: string): RegExp => {
-    const source = body.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replaceAll('*', '.*');
-    return new RegExp(body.startsWith('*') ? source : `^${source}`);
-  };
-  if (pattern.includes('~')) {
-    const expanded = pattern.replaceAll('~', homedir());
-    // Match either spelling: build one alternation over both bodies.
-    const bodies = [pattern, expanded].map((body) => {
-      const source = body.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replaceAll('*', '.*');
-      return body.startsWith('*') ? source : `(?:^${source})`;
-    });
-    return new RegExp(bodies.join('|'));
-  }
-  return compile(pattern);
+  const toSource = (body: string): string =>
+    body.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replaceAll('*', '.*');
+  const bodies = [pattern];
+  if (pattern.includes('~')) bodies.push(pattern.replaceAll('~', homedir()));
+  const source = bodies
+    .map((body) => (body.startsWith('*') ? toSource(body) : `(?:^${toSource(body)})`))
+    .join('|');
+  return new RegExp(source);
 }
 
 export function rulesForFamily(config: { rules: GateRule[] }, family: RuleFamily): GateRule[] {
@@ -229,6 +223,29 @@ export function loadGateConfig(settingsPath: string): GateConfig {
   return { status: 'ok', rules, skipped, allowCount };
 }
 
+export type SourceSelection =
+  | { status: 'ok'; path: string; config: Extract<GateConfig, { status: 'ok' }> }
+  | { status: 'unavailable'; reason: string };
+
+/**
+ * First candidate that exists and carries a permissions block wins. A parseable
+ * settings file without permissions (pi's own settings.json, for instance) is
+ * not the permission source and is skipped, not fatal.
+ */
+export function resolvePermissionSource(candidates: string[]): SourceSelection {
+  let unavailableReason: string | undefined;
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    const config = loadGateConfig(candidate);
+    if (config.status === 'ok') return { status: 'ok', path: candidate, config };
+    unavailableReason = config.reason;
+  }
+  if (unavailableReason !== undefined) {
+    return { status: 'unavailable', reason: unavailableReason };
+  }
+  return { status: 'unavailable', reason: 'no permission source found in candidate paths' };
+}
+
 // ---------------------------------------------------------------------------
 // Extension wiring
 // ---------------------------------------------------------------------------
@@ -245,26 +262,25 @@ export default async function (pi: ExtensionAPI) {
   let gates: Extract<GateConfig, { status: 'ok' }> | undefined;
 
   pi.on('session_start', (_event, ctx) => {
-    const moduleSettings = join(dirname(fileURLToPath(import.meta.url)), '../../settings.json');
-    const candidates = [moduleSettings, join(getAgentDir(), 'settings.json')];
-
-    let config: Extract<GateConfig, { status: 'ok' }> | undefined;
-    let loadedFrom: string | undefined;
-    let ungatedReason = 'no permission source found';
-    for (const candidate of candidates) {
-      const loaded = loadGateConfig(candidate);
-      if (loaded.status === 'ok') {
-        config = loaded;
-        loadedFrom = candidate;
-        break;
-      }
-      if (loaded.status === 'missing') continue; // try the next candidate
-      ungatedReason = loaded.reason;
+    let moduleDir: string;
+    try {
+      moduleDir = dirname(realpathSync(fileURLToPath(import.meta.url)));
+    } catch {
+      moduleDir = dirname(fileURLToPath(import.meta.url));
     }
+    // Order: the tracked root settings.json next to the extension (symlinks
+    // resolved, i.e. the checkout), then Claude's config-dir symlink to the
+    // same tracked file, then the pi agent dir for standalone installs.
+    const candidates = [
+      join(moduleDir, '../../settings.json'),
+      join(homedir(), '.claude', 'settings.json'),
+      join(getAgentDir(), 'settings.json'),
+    ];
+    const selection = resolvePermissionSource(candidates);
 
-    if (config === undefined) {
+    if (selection.status !== 'ok') {
       gates = undefined;
-      const message = `Permission gate UNGATED (${ungatedReason}); deny list is not enforced this session.`;
+      const message = `Permission gate UNGATED (${selection.reason}); deny list is not enforced this session.`;
       if (ctx.hasUI) {
         ctx.ui.notify(message, 'error');
         ctx.ui.setWidget(WIDGET_ID, ['perms: UNGATED - deny list not enforced']);
@@ -274,10 +290,11 @@ export default async function (pi: ExtensionAPI) {
       return;
     }
 
+    const config = selection.config;
     gates = config;
     if (ctx.hasUI) ctx.ui.setWidget(WIDGET_ID, undefined);
 
-    const summary = [`enforcing ${config.rules.length} deny rules from ${loadedFrom}`];
+    const summary = [`enforcing ${config.rules.length} deny rules from ${selection.path}`];
     if (config.skipped.length > 0) {
       summary.push(`skipped ${config.skipped.length} (no pi translation): ${config.skipped.join(', ')}`);
     }
