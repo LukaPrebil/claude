@@ -50,6 +50,27 @@ Pi has no built-in teammate mechanics. Shared workflows use their local fallback
 
 The pi resources themselves live in `pi/` (`settings.json`, `extensions/`) and are tracked like the claude root files. See [ADR 0009](docs/adr/0009-pi-adapter-vendored-settings-and-extensions.md) for the adapter boundary and [ADR 0010](docs/adr/0010-fork-lineage-with-personal-main-and-upstream-mirror.md) for the fork and branch model.
 
+## Releases
+
+Releases are manual and versioned by [semantic-release](https://semantic-release.gitbook.io/) from conventional commits - you never write a version number. Run the `Release` workflow from the Actions tab (optionally first with *dry run* checked) and, when the run contains releasable commits, it:
+
+1. computes the semver bump since the last `v*` tag (breaking → major, `feat` → minor, `fix`/everything else → patch),
+2. pushes one release commit to `main` with an updated `CHANGELOG.md` and `package.json` version, and
+3. tags `vX.Y.Z` and creates the matching GitHub release with notes from those commits.
+
+The tag is what [Pi](https://pi.dev) consumers pin:
+
+```bash
+pi install git:LukaPrebil/harness-config@v0.1.2
+```
+
+Two consumption modes exist; use one per machine, not both:
+
+- **Symlink-managed** (default): `scripts/setup-hosts.sh --apply` links instructions, shared skills, extensions, and settings into the host config dirs. The checkout is the source of truth and edits are live.
+- **Pi package install**: pinned clone under pi's management. Never install the package on a machine that also links the same resources - the shared `~/.agents/skills` path and the package's `skills/` would load every skill twice; if you must mix, filter with the object form (for example `"skills": []`) in settings.
+
+Releases never publish to npm. The bot release commit on `main` is the one non-human commit; see [ADR 0011](docs/adr/0011-semantic-release-on-manual-dispatch.md) and [ADR 0010](docs/adr/0010-fork-lineage-with-personal-main-and-upstream-mirror.md).
+
 ## What's inside
 
 - **`AGENTS.md`** - concise host-neutral instructions loaded by every supported host. See [ADR 0008](docs/adr/0008-share-agent-config-across-hosts.md).
