@@ -52,7 +52,7 @@ If the host does not provide an equivalent capability, follow the workflow local
 Use the workflow that matches the user's intent. Do not force research, planning, or implementation onto review-only and explanation-only requests.
 
 1. **Research** when entering unfamiliar or uncertain code. Read relevant files, inspect established patterns, and save substantial findings under `.claude/state/research/` when the workflow calls for an artifact.
-2. **Grill** decisions with `grill-with-docs` when alignment is needed. Resolve one decision at a time, update domain language and ADRs as agreed, and finish with an approved plan under `.claude/state/plans/`.
+2. **Grill** decisions with `grill-with-docs` when alignment is needed. Resolve one decision at a time, update domain language as agreed, and finish with an approved plan under `.claude/state/plans/`.
 3. **Implement** an approved plan with `build`. Work in small complete increments, run the repository's checks, and commit only when the user or active workflow authorizes it.
 4. **Summarize** meaningful completed work under `.claude/state/sessions/` when the workflow requires a session diary.
 
@@ -76,7 +76,8 @@ The historical `.claude/state/` path is shared workflow state for every host. Do
 - Use the repository's formatter, linter, type checker, tests, and build commands. Discover the actual CI checks rather than guessing.
 - Add tests for new behavior and bug fixes at the closest useful behavior boundary. Keep tests alongside the increment they verify.
 - Update existing documentation when the implemented behavior it describes changes. Do not document planned or speculative behavior as if it already exists.
-- Do not create new documentation unless the user requested it or the active workflow produces it by design.
+- Never create an ADR unless asked. `/document adr` is the only creation path.
+- Outside `/document`, never create a README or other doc unless asked.
 - Before changing or removing an unfamiliar construct, use history and `git blame` to understand why it exists.
 - Never trade away error handling, type safety, tests, or configuration boundaries for speed.
 
