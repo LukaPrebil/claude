@@ -61,8 +61,10 @@ Releases are manual and versioned by [semantic-release](https://semantic-release
 The tag is what [Pi](https://pi.dev) consumers pin:
 
 ```bash
-pi install git:LukaPrebil/harness-config@v0.1.2
+pi install git:github.com/LukaPrebil/harness-config@v0.1.2
 ```
+
+The `git:` shorthand needs the full `github.com/owner/repo` form - `git:owner/repo` resolves to an https URL without a hostname and fails.
 
 Two consumption modes exist; use one per machine, not both:
 
