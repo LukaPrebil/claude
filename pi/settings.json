@@ -12,7 +12,8 @@
   "showCacheMissNotices": true,
   "enableInstallTelemetry": false,
   "packages": [
-    "npm:pi-ollama-cloud"
+    "npm:pi-ollama-cloud",
+    "npm:pi-subagents"
   ],
   "defaultProvider": "ollama-cloud",
   "defaultModel": "glm-5.3-flash"
