@@ -10,8 +10,8 @@ Claude Code uses selective links under `~/.claude/` plus a second account dir (d
 
 ```bash
 # Clone the repo - the setup script auto-detects its own location
-git clone git@github.com:domengabrovsek/claude.git
-cd claude
+git clone git@github.com:LukaPrebil/harness-config.git
+cd harness-config
 
 # Report drift without changing anything
 bash scripts/setup-hosts.sh --check
@@ -66,7 +66,7 @@ Two more pinned packages complete the stack: [`pi-mcp-adapter`](https://pi.dev/p
 
 Agent delegation is provided by the [`pi-subagents`](https://pi.dev/packages/pi-subagents) package: shared personas (`agents/` tree) spawn as focused child pi sessions, background runs return control while the child keeps working, and worktree-isolated lanes come back with a managed branch. Its worktrees default to the system temp dir (`pi-parallel-*` branches; retarget with `PI_SUBAGENTS_WORKTREE_DIR`) and `worktree-prune` still sweeps them after merges. Note the shared `agents/` tree is reachable through the links, and agents can author personas into it - review `git status` after unusual runs.
 
-The pi resources themselves live in `pi/` (`settings.json`, `extensions/`) and are tracked like the claude root files. See [ADR 0009](docs/adr/0009-pi-adapter-vendored-settings-and-extensions.md) for the adapter boundary.
+The pi resources themselves live in `pi/` (`settings.json`, `extensions/`) and are tracked like the claude root files. See [ADR 0009](docs/adr/0009-pi-adapter-vendored-settings-and-extensions.md) for the adapter boundary and [ADR 0010](docs/adr/0010-fork-lineage-with-personal-main-and-upstream-mirror.md) for the fork and branch model.
 
 ## What's inside
 
