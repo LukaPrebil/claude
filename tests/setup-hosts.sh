@@ -76,6 +76,7 @@ run_setup() {
   CODEX_HOME="$TEST_HOME/.codex" \
   CLAUDE_CONFIG_DIR="$TEST_HOME/.claude" \
   AGENT_CONFIG_REPO="$TEST_REPO" \
+  PI_CODING_AGENT_DIR="$TEST_HOME/.pi/agent" \
     bash "$SETUP" "$@"
 }
 
