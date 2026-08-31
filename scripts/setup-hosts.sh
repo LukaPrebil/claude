@@ -404,7 +404,10 @@ fi
 
 if host_enabled pi; then
   for PI_DIR in $PI_DIRS; do
-    TAG="${PI_DIR/#$HOME/\~}"
+    TAG="$PI_DIR"
+    case "$TAG" in
+      "$HOME"/*) TAG="~${TAG#"$HOME"}" ;;
+    esac
     manage_link "$TAG/AGENTS.md" "$PI_DIR/AGENTS.md" "$REPO/AGENTS.md"
     manage_link "$TAG/extensions" "$PI_DIR/extensions" "$REPO/pi/extensions"
     manage_link "$TAG/settings.json" "$PI_DIR/settings.json" "$REPO/pi/settings.json"
