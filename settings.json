@@ -313,5 +313,9 @@
   "autoUpdatesChannel": "stable",
   "minimumVersion": "2.1.92",
   "tui": "fullscreen",
-  "skipAutoPermissionPrompt": false
+  "skipAutoPermissionPrompt": false,
+  "autoCompactEnabled": false,
+  "autoCompactWindow": 1000000,
+  "teammateMode": "auto",
+  "remoteControlAtStartup": true
 }
