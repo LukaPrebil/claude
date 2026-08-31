@@ -29,6 +29,20 @@ git config filter.strip-ephemeral-state.smudge cat
 
 `--check` is read-only and exits nonzero when drift exists. `--apply` never replaces a real path or wrong symlink. `--adopt` is the only replacement mode, and it moves every conflict to an adjacent `<path>.bak.<timestamp>` backup instead of deleting it. The existing `scripts/setup-symlinks.sh` command remains a Claude-only compatibility wrapper.
 
+### Machine host scope
+
+A machine that does not use every default dir records its own scope in `~/.agents/hosts.env`, sourced by the bootstrap when present. Entries use the `:=` form, so a real environment variable still wins:
+
+```sh
+: "${CLAUDE_CONFIG_DIRS:=$HOME/.claude}"
+: "${PI_CONFIG_DIRS:=$HOME/.pi/agent}"
+: "${HARNESS_SKIP_HOSTS:=codex}"
+```
+
+`HARNESS_SKIP_HOSTS` applies only under `--host all`; an explicit `--host codex` always runs. `AGENT_HOSTS_ENV` relocates the file.
+
+Without this, an argument-free `--check` re-derives the two-dir defaults and reports permanent drift on dirs the machine never adopted. That matters because the `drift-check` extension calls the script with no arguments and no environment, so the scope has to be a recorded fact rather than a shell prefix someone remembers to type.
+
 This repo is a fork of [`domengabrovsek/claude`](https://github.com/domengabrovsek/claude) carrying the multi-harness direction. `main` is the live personal config; the `upstream-main` branch mirrors upstream, upstream-bound PR branches cut from it, and upstream work merges into `main` periodically. See [ADR 0010](docs/adr/0010-fork-lineage-with-personal-main-and-upstream-mirror.md).
 
 For Codex, the bootstrap adds the shared-instruction fallback and a built-in TUI status line only when each setting is absent. It preserves an existing custom status line.

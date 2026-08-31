@@ -96,6 +96,12 @@ run_setup_with_pi_dir() {
     bash "$SETUP" "${@:2}"
 }
 
+run_setup_bare() {
+  HOME="$TEST_HOME" \
+  AGENT_CONFIG_REPO="$TEST_REPO" \
+    bash "$SETUP" "$@"
+}
+
 run_wrapper() {
   HOME="$TEST_HOME" \
   CODEX_HOME="$TEST_HOME/.codex" \
@@ -330,6 +336,64 @@ assert_true "legacy wrapper does not configure shared skills" test ! -e "$TEST_H
 assert_success "legacy --check remains report-only" run_wrapper --check
 assert_success "legacy -n remains report-only" run_wrapper -n
 assert_success "legacy --dry-run remains report-only" run_wrapper --dry-run
+
+# A machine records its scope once so an argument-free run stays correct. This
+# is the drift-check extension's exact call shape: no flags, no environment.
+new_case scope_file_narrows_hosts
+mkdir -p "$TEST_HOME/.agents"
+cat > "$TEST_HOME/.agents/hosts.env" <<'SCOPE'
+: "${CLAUDE_CONFIG_DIRS:=$HOME/.claude}"
+: "${PI_CONFIG_DIRS:=$HOME/.pi/agent}"
+: "${HARNESS_SKIP_HOSTS:=codex}"
+SCOPE
+assert_success "scope file applies with no arguments" run_setup_bare --apply
+assert_true "scope file links the base claude dir" assert_link "$TEST_HOME/.claude/CLAUDE.md" "$TEST_REPO/CLAUDE.md"
+assert_true "scope file links the base pi dir" assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "scope file skips the personal claude dir" test ! -e "$TEST_HOME/.claude-personal"
+assert_true "scope file skips the personal pi dir" test ! -e "$TEST_HOME/.pi-personal"
+assert_true "scope file skips codex" test ! -e "$TEST_HOME/.codex"
+assert_true "scope file still links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
+assert_success "argument-free check is clean after apply" run_setup_bare --check
+
+# Without a scope file the two-dir defaults stand, so existing machines are
+# unaffected by the new lookup.
+new_case scope_file_absent_keeps_defaults
+assert_success "no scope file still applies" run_setup_bare --apply
+assert_true "no scope file links the personal claude dir" assert_link "$TEST_HOME/.claude-personal/CLAUDE.md" "$TEST_REPO/CLAUDE.md"
+assert_true "no scope file links the personal pi dir" assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "no scope file configures codex" test -e "$TEST_HOME/.codex/AGENTS.md"
+
+# The := form means a real environment variable is never clobbered.
+new_case scope_file_yields_to_environment
+mkdir -p "$TEST_HOME/.agents"
+cat > "$TEST_HOME/.agents/hosts.env" <<'SCOPE'
+: "${PI_CONFIG_DIRS:=$HOME/.pi/agent}"
+: "${HARNESS_SKIP_HOSTS:=codex pi}"
+SCOPE
+assert_success "environment overrides the scope file" env HOME="$TEST_HOME" AGENT_CONFIG_REPO="$TEST_REPO" PI_CONFIG_DIRS="$TEST_HOME/.pi-elsewhere/agent" HARNESS_SKIP_HOSTS="codex" bash "$SETUP" --apply
+assert_true "environment pi dir wins" assert_link "$TEST_HOME/.pi-elsewhere/agent/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "environment skip list wins" test ! -e "$TEST_HOME/.codex"
+assert_true "scope file pi dir is unused" test ! -e "$TEST_HOME/.pi/agent"
+
+# An explicit --host is a direct instruction and outranks the skip list.
+new_case explicit_host_beats_skip_list
+mkdir -p "$TEST_HOME/.agents"
+cat > "$TEST_HOME/.agents/hosts.env" <<'SCOPE'
+: "${HARNESS_SKIP_HOSTS:=codex}"
+SCOPE
+assert_success "explicit codex host runs despite the skip list" run_setup_bare --apply --host codex
+assert_true "explicit codex host is configured" test -e "$TEST_HOME/.codex/AGENTS.md"
+
+# AGENT_HOSTS_ENV relocates the file for machines that keep it elsewhere.
+new_case scope_file_relocated
+mkdir -p "$TEST_HOME/elsewhere"
+cat > "$TEST_HOME/elsewhere/scope.env" <<'SCOPE'
+: "${HARNESS_SKIP_HOSTS:=codex pi}"
+SCOPE
+assert_success "relocated scope file applies" env HOME="$TEST_HOME" AGENT_CONFIG_REPO="$TEST_REPO" AGENT_HOSTS_ENV="$TEST_HOME/elsewhere/scope.env" bash "$SETUP" --apply
+assert_true "relocated scope file skips codex" test ! -e "$TEST_HOME/.codex"
+assert_true "relocated scope file skips pi" test ! -e "$TEST_HOME/.pi"
+assert_true "relocated scope file still links claude" assert_link "$TEST_HOME/.claude/CLAUDE.md" "$TEST_REPO/CLAUDE.md"
 
 echo ""
 echo "$PASSED passed; $FAILED failed"
