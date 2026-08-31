@@ -152,8 +152,8 @@ hooks|hooks
 rules|rules
 EOF
 assert_true "Codex AGENTS.md is shared" assert_link "$TEST_HOME/.codex/AGENTS.md" "$TEST_REPO/AGENTS.md"
-assert_true "Pi base dir receives instructions and resources" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json"
-assert_true "Pi personal dir receives instructions and resources" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "Pi base dir receives instructions and resources" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi/agent/agents" "$TEST_REPO/agents"
+assert_true "Pi personal dir receives instructions and resources" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi-personal/agent/agents" "$TEST_REPO/agents"
 assert_true "shared skills are repo-owned" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Codex fallback is created" grep -Fq 'project_doc_fallback_filenames = ["CLAUDE.md"]' "$TEST_HOME/.codex/config.toml"
 assert_true "Codex status line is created" grep -Fq 'status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]' "$TEST_HOME/.codex/config.toml"
@@ -163,7 +163,7 @@ assert_success "clean check exits zero" run_setup --check
 new_case pi_only
 assert_success "Pi-only apply succeeds" run_setup --apply --host pi
 assert_true "Pi-only apply links instructions" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
-assert_true "Pi-only apply links the personal dir too" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "Pi-only apply links the personal dir too" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi-personal/agent/agents" "$TEST_REPO/agents"
 assert_true "Pi-only apply links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Pi-only apply skips Codex" test ! -e "$TEST_HOME/.codex"
 assert_success "Pi-only check exits zero" run_setup --check --host pi

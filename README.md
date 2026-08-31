@@ -44,11 +44,11 @@ bash scripts/setup-hosts.sh --apply --host pi
 
 The Pi selector links instructions, `extensions/`, and `settings.json` into every configured pi agent dir - `PI_CONFIG_DIRS` (space-separated list) defaults to `~/.pi/agent` plus the personal-account dir `~/.pi-personal/agent`; the single-dir `PI_CODING_AGENT_DIR` override takes precedence when set. It links shared skills under `~/.agents/skills`. These resources apply in interactive, print, JSON, and RPC modes. See [Pi's usage documentation](https://pi.dev/docs/latest/usage).
 
-The bootstrap does not install or upgrade Pi. It does not manage providers, models, credentials, project trust, tools, or isolation. Pi has no built-in sandbox, so unattended work needs an external boundary. See [Pi's security guidance](https://pi.dev/docs/latest/security).
+The bootstrap does not install or upgrade Pi. It does not manage providers, models, credentials, project trust, tools, or isolation. Pi has no built-in sandbox, so unattended work needs an external boundary. See [Pi's security guidance](https://pi.dev/docs/latest/security). Auto-compaction stays off by choice: a long session is handed off or stopped rather than silently summarized.
 
 The `permission-gate` extension gives pi mechanical enforcement of the deny list in the root `settings.json`: `Read` rules bind the `read` tool, `Edit` rules bind `edit` and `write`, and `Bash` rules match every segment of a chained command. It loads the list at runtime, so deny-list edits apply without extension changes, and rules without a pi translation surface in a skip notice instead of dropping silently. A missing, empty, or unparseable permission source leaves the gate UNGATED and announces it on every session start. It remains friction, not a sandbox: deliberately obfuscated commands still win, so unattended pi work still needs the external boundary above.
 
-Pi has no built-in teammate mechanics. Shared workflows use their local fallback when they encounter `Agent` or `SendMessage`; a Pi teammate adapter remains a mechanical-parity gap.
+The `teammates` extension restores lane-mode `Agent` parity: shared personas spawn as `pi --mode json` subprocesses, optionally isolated in git worktrees under `.claude/worktrees/` whose branch comes back for the merge flow. `SendMessage` panel mode stays a documented gap.
 
 The pi resources themselves live in `pi/` (`settings.json`, `extensions/`) and are tracked like the claude root files. See [ADR 0009](docs/adr/0009-pi-adapter-vendored-settings-and-extensions.md) for the adapter boundary and [ADR 0010](docs/adr/0010-fork-lineage-with-personal-main-and-upstream-mirror.md) for the fork and branch model.
 
