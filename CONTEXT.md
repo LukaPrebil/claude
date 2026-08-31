@@ -42,6 +42,14 @@ _Avoid_: "full parity" - hooks, permissions, and subagent mechanics are outside 
 Equivalent enforcement through host-specific hooks, permissions, notifications, and subagent configuration.
 _Avoid_: "behavioral rules" - this parity is enforced by the host rather than model attention.
 
+**Deny list**:
+The machine-readable deny rules in the root `settings.json`, canonical enforcement input that each host's mechanical layer translates (allow rules are inert under deny-wins precedence).
+_Avoid_: "Claude permissions" (hosts other than Claude consume it), "blocklist".
+
+**Permission gate**:
+pi's mechanical enforcement of the Deny list by intercepting model tool calls before execution.
+_Avoid_: "sandbox", "security boundary" - an in-process gate is friction, not isolation.
+
 **Workflow state**:
 Cross-session research, plans, specs, and diaries shared by every agent host under the historical `.claude/state/` project path.
 _Avoid_: "Claude state" - the path is retained for compatibility, but ownership is multi-host.
@@ -125,6 +133,8 @@ _Avoid_: "soft rules", "style guide".
 - The **Host bootstrap** leaves provider, model, and credential choices to each **Agent host** user.
 - A **Host adapter** may add host-specific behavior but must not redefine shared guidance.
 - **Behavioral parity** is the first multi-host milestone; **Mechanical parity** is translated and verified separately for each host.
+- A **Permission gate** enforces the **Deny list** on one Agent host; rules without a translation for that host are surfaced, not silently dropped.
+- All hosts translate one canonical **Deny list**; a host may enforce a superset, never a subset.
 - **Behavioral parity** covers interactive and non-interactive modes supported by each **Agent host**.
 - Every **Agent host** reads and writes the same **Workflow state** so work can move between hosts without conversion.
 - Detailed standards live in **Reusable disciplines** and load on demand rather than expanding the **Shared instruction source**.
@@ -152,3 +162,4 @@ _Avoid_: "soft rules", "style guide".
 - "Full Pi support" was ambiguous - resolved: Pi loads shared behavior in every native mode; teammate mechanics remain a documented **Mechanical parity** gap.
 - "subagent" was used for both the generic spawn mechanism and a named agent - resolved: a named agent is a **Teammate**; "subagent" refers only to the generic Agent-tool spawn.
 - "skill" was used for both sequencing workflows and single practices - resolved: a sequencing skill is an **Orchestrator**, a single-practice skill is a **Reusable discipline**.
+- "full permission parity for pi" was ambiguous - resolved: the pi **Permission gate** enforces a **superset** of the **Deny list** on file tools (Edit rules also bind writes; bash matching covers command segments), so any parity claim names its direction.
