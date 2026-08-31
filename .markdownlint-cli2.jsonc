@@ -1,0 +1,9 @@
+// Lint scope: every markdown file in the repo, minus generated files whose
+// shape is owned by a tool (semantic-release writes CHANGELOG.md).
+// Rules stay in .markdownlint.json; this file only scopes the file set.
+{
+  "globs": [
+    "**/*.md",
+    "!CHANGELOG.md"
+  ]
+}
