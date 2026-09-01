@@ -1,3 +1,22 @@
+# [0.3.0](https://github.com/LukaPrebil/harness-config/compare/v0.2.0...v0.3.0) (2026-09-01)
+
+
+### Bug Fixes
+
+* **release:** push the bot commit with an admin credential ([#14](https://github.com/LukaPrebil/harness-config/issues/14)) ([ee00903](https://github.com/LukaPrebil/harness-config/commit/ee009038f59bfad449606472557d882f8df270eb))
+
+
+### Features
+
+* **claude:** promote session runtime settings to the tracked config ([#11](https://github.com/LukaPrebil/harness-config/issues/11)) ([8c0686d](https://github.com/LukaPrebil/harness-config/commit/8c0686d27ccf5de35b28d82327f2d116a6e4e0c6))
+* **hosts:** record machine host scope so bare --check stays correct ([#12](https://github.com/LukaPrebil/harness-config/issues/12)) ([2e60459](https://github.com/LukaPrebil/harness-config/commit/2e604592f4bf14e4e1e3724235b7b16b0b3468cc))
+* **pi:** adopt pi-subagents and retire the teammates prototype ([#10](https://github.com/LukaPrebil/harness-config/issues/10)) ([fc6d0b5](https://github.com/LukaPrebil/harness-config/commit/fc6d0b558251b46646141d9f1e07199f1fbc8ce8))
+* **pi:** adopt the permission-system, mcp-adapter, and intercom packages ([#13](https://github.com/LukaPrebil/harness-config/issues/13)) ([0c10df0](https://github.com/LukaPrebil/harness-config/commit/0c10df019fcd1f28ba200c1046f23673766d6a1d))
+* **pi:** drift-check extension surfacing bootstrap drift ([#7](https://github.com/LukaPrebil/harness-config/issues/7)) ([ad65a9c](https://github.com/LukaPrebil/harness-config/commit/ad65a9c37685460950e6c889ff4c2d58bc5e08cd))
+* **pi:** permission gate enforcing the deny list in pi ([#5](https://github.com/LukaPrebil/harness-config/issues/5)) ([91d5276](https://github.com/LukaPrebil/harness-config/commit/91d5276adc98a0f0ab7f6ed9511130dc9cce8ede))
+* **pi:** teammates extension for lane-mode agent parity ([#9](https://github.com/LukaPrebil/harness-config/issues/9)) ([78143f3](https://github.com/LukaPrebil/harness-config/commit/78143f3769598e4f0cc1963c08441749ff9f2c0c))
+* **pi:** worktree cleanup on session end ([#8](https://github.com/LukaPrebil/harness-config/issues/8)) ([e0d5d5a](https://github.com/LukaPrebil/harness-config/commit/e0d5d5ab6ca216218935d0b2e6675ea6ac388171))
+
 # [0.2.0](https://github.com/LukaPrebil/harness-config/compare/v0.1.0...v0.2.0) (2026-08-31)
 
 
