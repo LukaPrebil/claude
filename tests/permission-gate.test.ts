@@ -1,45 +1,42 @@
 /**
- * Tests for permission-gate: a pure unit layer on synthetic rules, plus a
- * drift alarm - every rule in the real root settings.json must classify as
- * translated or sit on an explicit expected-skip list, so deny-list edits
- * pi cannot enforce fail here instead of silently skipping at runtime.
+ * Tests for permission-gate's derived-policy generator: a pure unit layer on
+ * translation edges, plus two drift alarms against the real deny list -
+ * every rule in the real root settings.json must classify (no silent skips),
+ * and the committed derived config must equal a fresh derivation byte for
+ * byte, so deny-list edits fail here instead of shipping a stale config.
  */
 
 // Lives under tests/ (not pi/extensions/) because pi auto-discovers every
 // *.ts directly inside extensions/ and would load this file as an extension.
 
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
-  bashSegments,
+  buildPolicyDocument,
   classifyRule,
-  compileBashRule,
-  compilePathGlob,
+  derivePermissionPolicy,
   loadGateConfig,
-  matchBash,
-  matchPath,
   resolvePermissionSource,
-  type GateRule,
+  serializePolicyDocument,
+  translateMcpRule,
+  translatePathPattern,
+  type DenyRule,
 } from '../pi/extensions/permission-gate.ts';
 
-const rule = (source: string): GateRule => {
-  const classified = classifyRule(source);
-  assert.ok(classified, `fixture must classify: ${source}`);
-  const regex =
-    classified.family === 'bash' ? compileBashRule(classified.pattern) : compilePathGlob(classified.pattern);
-  return { ...classified, source, regex };
-};
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const realSettings = join(repoRoot, 'settings.json');
+const committedConfig = join(repoRoot, 'pi/extensions/pi-permission-system/config.json');
 
 describe('classifyRule', () => {
   it('binds Read rules to path-read', () => {
     assert.deepEqual(classifyRule('Read(**/.env)'), { family: 'path-read', pattern: '**/.env' });
   });
 
-  it('binds Edit and Write rules to the superset path-write family', () => {
+  it('binds Edit and Write rules to the write family', () => {
     assert.equal(classifyRule('Edit(~/.ssh/**)')?.family, 'path-write');
     assert.equal(classifyRule('Write(**/credentials.json)')?.family, 'path-write');
   });
@@ -48,216 +45,144 @@ describe('classifyRule', () => {
     assert.deepEqual(classifyRule('Bash(sudo *)'), { family: 'bash', pattern: 'sudo *' });
   });
 
-  it('leaves MCP wildcards unclassified', () => {
-    assert.equal(classifyRule('mcp__claude_ai_Atlassian__*'), undefined);
+  it('classifies MCP rules with single-underscore server names', () => {
+    assert.deepEqual(classifyRule('mcp__claude_ai_Atlassian__*'), {
+      family: 'mcp',
+      pattern: 'mcp__claude_ai_Atlassian__*',
+    });
+  });
+
+  it('leaves unknown rules unclassified', () => {
+    assert.equal(classifyRule('WebFetch(*)'), undefined);
+    assert.equal(classifyRule('mcp__broken__'), undefined);
+    assert.equal(classifyRule('mcp__a'), undefined);
   });
 });
 
-describe('compilePathGlob', () => {
-  it('spans segments with **/', () => {
-    const re = compilePathGlob('**/.env');
-    assert.ok(re.test('/Users/x/proj/.env'));
-    assert.ok(re.test('/.env'));
-    assert.ok(!re.test('/Users/x/proj/env'));
+describe('translatePathPattern', () => {
+  it('collapses ** to their cross-segment *', () => {
+    assert.equal(translatePathPattern('~/.ssh/**'), '~/.ssh/*');
+    assert.equal(translatePathPattern('**/.env'), '*/.env');
+    assert.equal(translatePathPattern('**/*.pem'), '*/*.pem');
   });
 
-  it('keeps * inside one segment', () => {
-    const re = compilePathGlob('**/*.pem');
-    assert.ok(re.test('/Users/x/a/b/key.pem'));
-    assert.ok(!re.test('/Users/x/a/b/keypem'));
-  });
-
-  it('expands ~ to the real home directory', () => {
-    const re = compilePathGlob('~/.ssh/**');
-    assert.ok(re.test(join(homedir(), '.ssh', 'id_ed25519')));
-  });
-
-  it('matches the directory itself for a trailing **', () => {
-    const re = compilePathGlob('~/.aws/**');
-    assert.ok(re.test(join(homedir(), '.aws')));
-    assert.ok(!re.test(join(homedir(), '.awsx')));
-  });
-
-  it('treats literal dots literally', () => {
-    const re = compilePathGlob('**/.env.local');
-    assert.ok(re.test('/x/.env.local'));
-    assert.ok(!re.test('/x/.envXlocal'));
+  it('keeps single stars and literal segments verbatim', () => {
+    assert.equal(translatePathPattern('~/.vault-token'), '~/.vault-token');
+    assert.equal(translatePathPattern('~/.config/Code/User/globalStorage/**'), '~/.config/Code/User/globalStorage/*');
   });
 });
 
-describe('matchPath', () => {
-  const rules = [
-    rule('Read(**/.env)'),
-    rule('Read(~/.ssh/**)'),
-    rule('Edit(~/.gitconfig)'),
-    rule('Read(**/*-key.json)'),
-  ];
-
-  it('blocks env files for reads anywhere', () => {
-    const hit = matchPath('/Users/x/proj', '/Users/x/proj/backend/.env', rules);
-    assert.equal(hit?.pattern, '**/.env');
+describe('translateMcpRule', () => {
+  it('maps a wildcard tool to a server prefix pattern', () => {
+    assert.equal(translateMcpRule('mcp__claude_ai_Atlassian__*'), 'claude_ai_Atlassian*');
   });
 
-  it('blocks ssh material under the expanded home', () => {
-    const hit = matchPath('/Users/x/proj', join(homedir(), '.ssh', 'known_hosts'), rules);
-    assert.equal(hit?.source, 'Read(~/.ssh/**)');
+  it('maps a named tool to the server:tool form', () => {
+    assert.equal(translateMcpRule('mcp__exa__web_search'), 'exa:web_search');
   });
 
-  it('resolves relative tool paths against cwd', () => {
-    const hit = matchPath('/Users/x/proj/app', '.env', rules);
-    assert.equal(hit?.pattern, '**/.env');
-  });
-
-  it('matches tilde spellings passed verbatim by the model', () => {
-    assert.equal(matchPath('/tmp', '~/.ssh/id_ed25519', rules)?.pattern, '~/.ssh/**');
-  });
-
-  it('binds Edit rules to write-family matching, not read', () => {
-    const gitconfig = join(homedir(), '.gitconfig');
-    assert.equal(matchPath('/tmp', gitconfig, rules.filter((r) => r.family === 'path-write'))?.pattern, '~/.gitconfig');
-    assert.equal(matchPath('/tmp', gitconfig, rules.filter((r) => r.family === 'path-read')), null);
-  });
-
-  it('does not block .env.example', () => {
-    assert.equal(matchPath('/Users/x/proj', '/Users/x/proj/.env.example', rules), null);
-  });
-
-  it('does not block unrelated paths', () => {
-    assert.equal(matchPath('/Users/x/proj', '/Users/x/proj/src/index.ts', rules), null);
+  it('rejects malformed rules', () => {
+    assert.equal(translateMcpRule('mcp__a'), undefined);
+    assert.equal(translateMcpRule('mcp__a__'), undefined);
   });
 });
 
-describe('bashSegments', () => {
-  it('splits on chains, semicolons, pipes, and newlines', () => {
-    assert.deepEqual(bashSegments('cd /tmp && sudo rm -rf x'), ['cd /tmp', 'sudo rm -rf x']);
+describe('derivePermissionPolicy', () => {
+  const rule = (family: DenyRule['family'], pattern: string, source = `${family}:${pattern}`): DenyRule => ({
+    family,
+    pattern,
+    source,
+  });
+
+  it('keeps read and write directions separate', () => {
+    const policy = derivePermissionPolicy({
+      status: 'ok',
+      rules: [rule('path-read', '~/.ssh/**'), rule('path-write', '**/package-lock.json')],
+      skipped: [],
+      allowCount: 0,
+    });
+    assert.deepEqual(policy.pathRead, { '~/.ssh/*': 'deny' });
+    assert.deepEqual(policy.pathWrite, { '*/package-lock.json': 'deny' });
+  });
+
+  it('deduplicates mirrored patterns and sorts deterministically', () => {
+    const policy = derivePermissionPolicy({
+      status: 'ok',
+      rules: [rule('path-read', '**/.env'), rule('path-read', '~/.vault-token'), rule('path-read', '**/.env')],
+      skipped: [],
+      allowCount: 0,
+    });
+    assert.deepEqual(Object.keys(policy.pathRead), ['*/.env', '~/.vault-token']);
+  });
+
+  it('passes bash patterns through and translates MCP rules', () => {
+    const policy = derivePermissionPolicy({
+      status: 'ok',
+      rules: [rule('bash', 'rm -rf *'), rule('bash', 'rm -rf *'), rule('mcp', 'mcp__exa__*')],
+      skipped: [],
+      allowCount: 0,
+    });
+    assert.deepEqual(policy.bash, { 'rm -rf *': 'deny' });
+    assert.deepEqual(policy.mcp, { 'exa*': 'deny' });
+  });
+
+  it('always sets the universal fallback to allow, never ask', () => {
+    const policy = derivePermissionPolicy({ status: 'ok', rules: [], skipped: [], allowCount: 0 });
+    assert.equal(policy.universal, 'allow');
+  });
+});
+
+describe('buildPolicyDocument', () => {
+  it('omits empty surfaces and emits only deny states', () => {
+    const doc = buildPolicyDocument({
+      universal: 'allow',
+      pathRead: { '*/.env': 'deny' },
+      pathWrite: {},
+      bash: { 'sudo *': 'deny' },
+      mcp: {},
+    });
+    assert.deepEqual(Object.keys(doc.permission), ['*', 'path_read', 'bash']);
+    assert.equal(doc.permission['*'], 'allow');
+  });
+
+  it('serializes deterministically with a trailing newline', () => {
+    const doc = buildPolicyDocument({
+      universal: 'allow',
+      pathRead: { '*/.env': 'deny' },
+      pathWrite: {},
+      bash: {},
+      mcp: {},
+    });
+    assert.equal(serializePolicyDocument(doc), serializePolicyDocument(doc));
+    assert.ok(serializePolicyDocument(doc).endsWith('}\n'));
+  });
+});
+
+describe('real deny list (drift alarms)', () => {
+  const selection = resolvePermissionSource([realSettings]);
+
+  it('resolves the tracked settings.json as the permission source', () => {
+    assert.equal(selection.status, 'ok', 'tracked root settings.json must exist and carry a deny list');
+  });
+
+  it('classifies every deny rule - no silent skips', () => {
+    assert.ok(selection.status === 'ok');
     assert.deepEqual(
-      bashSegments('echo a; echo b | echo c\necho d || echo e'),
-      ['echo a', 'echo b', 'echo c', 'echo d', 'echo e'],
+      selection.config.skipped,
+      [],
+      `every deny rule must translate; untranslatable: ${selection.config.skipped.join(', ')}`,
     );
-    assert.deepEqual(bashSegments('   '), []);
-  });
-});
-
-describe('compileBashRule', () => {
-  it('anchors non-leading-star patterns at the start', () => {
-    assert.ok(compileBashRule('dd *').test('dd if=/dev/zero of=x'));
-    assert.ok(!compileBashRule('dd *').test('echo dd x'));
   });
 
-  it('searches anywhere for leading-star patterns', () => {
-    assert.ok(compileBashRule('*DROP TABLE*').test('echo DROP TABLE'));
-  });
-});
-
-describe('matchBash', () => {
-  const rules = [
-    rule('Bash(sudo *)'),
-    rule('Bash(git push --force *)'),
-    rule('Bash(*DROP TABLE*)'),
-    rule('Bash(*TRUNCATE TABLE*)'),
-    rule('Bash(chmod * ~/.ssh/*)'),
-  ];
-
-  it('catches chained sudo a whole-string prefix match would miss', () => {
-    assert.equal(matchBash('cd /tmp && sudo rm -rf x', rules)?.pattern, 'sudo *');
+  it('matches the committed derived config byte for byte', () => {
+    assert.ok(selection.status === 'ok');
+    const document = buildPolicyDocument(derivePermissionPolicy(selection.config));
+    const expected = serializePolicyDocument(document);
+    const actual = readFileSync(join(repoRoot, 'pi/extensions/pi-permission-system/config.json'), 'utf8');
+    assert.equal(actual, expected, 'derived policy drifted from the tracked config; regenerate it');
   });
 
-  it('matches mid-string wildcards from any segment', () => {
-    assert.equal(matchBash('psql -c "DROP TABLE users"', rules)?.pattern, '*DROP TABLE*');
-    assert.equal(matchBash('echo start; TRUNCATE TABLE t', rules)?.pattern, '*TRUNCATE TABLE*');
-  });
-
-  it('anchors prefix patterns at segment starts, not mid-word', () => {
-    assert.equal(matchBash('echo "sudo is a command"', rules), null);
-    assert.equal(matchBash('sudois a word', rules), null);
-  });
-
-  it('matches force pushes anywhere in a chain', () => {
-    const hit = matchBash('git add -A && git commit -m x && git push --force origin main', rules);
-    assert.equal(hit?.pattern, 'git push --force *');
-  });
-
-  it('matches chmod on ssh material in both tilde spellings', () => {
-    assert.equal(matchBash('chmod 600 ~/.ssh/id', rules)?.pattern, 'chmod * ~/.ssh/*');
-    assert.equal(matchBash(`chmod 600 ${homedir()}/.ssh/id`, rules)?.pattern, 'chmod * ~/.ssh/*');
-  });
-
-  it('does not match unrelated commands', () => {
-    assert.equal(matchBash('ls -la', rules), null);
-  });
-});
-
-describe('loadGateConfig (drift alarm)', () => {
-  const settingsPath = resolve(import.meta.dirname, '../settings.json');
-
-  it('translates every deny rule in the real settings.json or lists it as expected skip', () => {
-    const expectedSkips = ['mcp__claude_ai_Atlassian__*'];
-    const config = loadGateConfig(settingsPath);
-    if (config.status !== 'ok') {
-      assert.fail(`gate must load the tracked permission source: ${config.reason}`);
-    }
-    const deny = (JSON.parse(readFileSync(settingsPath, 'utf8')) as { permissions: { deny: string[] } })
-      .permissions.deny;
-    const translated = new Set(config.rules.map((r) => r.source));
-    const unexpected = deny.filter((source) => !translated.has(source) && !expectedSkips.includes(source));
-    assert.deepEqual(unexpected, [], 'deny rules pi cannot translate; extend the gate or the expected-skip list');
-    assert.equal(config.skipped.length, expectedSkips.length);
-    assert.ok(config.rules.length > 100, 'sanity: the deny list must translate in bulk');
-    assert.equal(config.allowCount, 4);
-  });
-
-  it('reports missing and broken sources without throwing', () => {
+  it('keeps loadGateConfig resilient on bad sources', () => {
     assert.equal(loadGateConfig('/nonexistent/settings.json').status, 'missing');
-    assert.equal(loadGateConfig(join(import.meta.dirname, 'setup-hosts.sh')).status, 'error');
-  });
-
-  it('treats a permissions block without a deny list as empty', () => {
-    const fixturePath = join(tmpdir(), 'permission-gate-fixture-empty.json');
-    writeFileSync(fixturePath, JSON.stringify({ permissions: { allow: ['Read(**/x)'] } }));
-    try {
-      assert.equal(loadGateConfig(fixturePath).status, 'empty');
-    } finally {
-      rmSync(fixturePath);
-    }
-  });
-});
-
-describe('resolvePermissionSource', () => {
-  const scratch = (): string => mkdtempSync(join(tmpdir(), 'permission-gate-select-'));
-
-  it('picks the first candidate that carries a permissions block', () => {
-    const dir = scratch();
-    const noPerms = join(dir, 'pi-settings.json');
-    const withPerms = join(dir, 'settings.json');
-    writeFileSync(noPerms, JSON.stringify({ theme: 'dark' }));
-    writeFileSync(withPerms, JSON.stringify({ permissions: { deny: ['Read(**/.env)'] } }));
-    try {
-      const selection = resolvePermissionSource(['/nonexistent.json', noPerms, withPerms]);
-      assert.equal(selection.status, 'ok');
-      if (selection.status === 'ok') {
-        assert.equal(selection.path, withPerms);
-        assert.equal(selection.config.rules.length, 1);
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('stays unavailable and names the failure when nothing qualifies', () => {
-    const dir = scratch();
-    writeFileSync(join(dir, 'broken.json'), '{ not json');
-    try {
-      const selection = resolvePermissionSource([join(dir, 'broken.json')]);
-      assert.equal(selection.status, 'unavailable');
-      if (selection.status === 'unavailable') assert.match(selection.reason, /unreadable|not an object|empty/);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('reports missing when no candidate even exists', () => {
-    const selection = resolvePermissionSource(['/nonexistent-a.json', '/nonexistent-b.json']);
-    assert.equal(selection.status, 'unavailable');
-    if (selection.status === 'unavailable') assert.match(selection.reason, /no permission source found/);
   });
 });

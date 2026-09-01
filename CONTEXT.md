@@ -50,6 +50,10 @@ _Avoid_: "Claude permissions" (hosts other than Claude consume it), "blocklist".
 pi's mechanical enforcement of the Deny list by intercepting model tool calls before execution.
 _Avoid_: "sandbox", "security boundary" - an in-process gate is friction, not isolation.
 
+**Derived policy**:
+A permission config a host mechanism consumes, generated from the Deny list rather than hand-edited; staleness is Drift.
+_Avoid_: "synced permissions", hand-edited copies of Deny-list rules.
+
 **Drift**:
 A host's links diverging from the checkout; the Host bootstrap detects it with `--check` and repairs it with `--apply`.
 _Avoid_: "config drift", "stale links", "out-of-sync".
@@ -71,6 +75,10 @@ _Avoid_: "fan-out mode", "worktree mode".
 **Panel mode**:
 Named read-only teammates that coordinate peer-to-peer via SendMessage to challenge each other, then settle on one combined answer for the parent.
 _Avoid_: "round-table", "team mode".
+
+**Peer session**:
+Another pi session on this machine, addressable directly for coordination; exists outside the spawn relationship, unlike a Teammate.
+_Avoid_: "subagent", "teammate" for cross-session peers.
 
 **Advisory persona**:
 A persona whose frontmatter `tools` list excludes Edit/Write/NotebookEdit, making the panel-mode read-only guarantee mechanical rather than brief-level (PR Reviewer, Cybersecurity Expert, GDPR Expert, Product Manager, UX Expert).
@@ -139,12 +147,14 @@ _Avoid_: "soft rules", "style guide".
 - **Behavioral parity** is the first multi-host milestone; **Mechanical parity** is translated and verified separately for each host.
 - A **Permission gate** enforces the **Deny list** on one Agent host; rules without a translation for that host are surfaced, not silently dropped.
 - All hosts translate one canonical **Deny list**; a host may enforce a superset, never a subset.
+- A host's permission mechanism derives its rules from the **Deny list**; a generated or synced copy is acceptable, a second hand-maintained policy file is not.
 - **Drift** between the checkout and a host is surfaced at that host's session start.
 - **Behavioral parity** covers interactive and non-interactive modes supported by each **Agent host**.
 - Every **Agent host** reads and writes the same **Workflow state** so work can move between hosts without conversion.
 - Detailed standards live in **Reusable disciplines** and load on demand rather than expanding the **Shared instruction source**.
 - The **Rulebook** exposes detailed `rules/` standards as one **Reusable discipline** without changing their source location.
 - A **Teammate** runs in either **Lane mode** or **Panel mode**.
+- A **Peer session** is another session on this machine reachable through the intercom broker; only Teammates are spawned, and only Peer sessions exist before and after one conversation.
 - Our repo keeps **Orchestrators** at the **Model-invoked** layer (grill and build auto-fire as workflow phases); only `wayfinder` is a **User-invoked** orchestrator.
 - A **Reusable discipline** is always **Model-invoked**; an **Orchestrator** may invoke disciplines.
 - `wayfinder` resolves **Decision tickets** one per session until the fog clears, then hands to the spec stage.
