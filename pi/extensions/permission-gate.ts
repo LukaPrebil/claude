@@ -1,36 +1,41 @@
 /**
- * permission-gate - pi's mechanical enforcement of the harness deny list.
+ * permission-gate - derives pi's permission policy from the harness deny list.
  *
- * Translates the permissions block of the tracked root settings.json into
- * tool_call gates at runtime (see CONTEXT.md: "Deny list", "Permission gate"):
+ * The mechanical enforcement itself is the adopted @gotgenes/pi-permission-system
+ * package (pinned in pi/settings.json). This extension no longer gates tool
+ * calls; it is the translation step that keeps that package's config a Derived
+ * policy (CONTEXT.md): regenerated from the permissions block of the tracked
+ * root settings.json at every session start, never hand-edited.
  *
- *   Read(...)  -> pi read
- *   Edit(...)  -> pi edit AND write (superset: creating a secret is worse
- *                 than editing one)
- *   Bash(...)  -> model-invoked bash; the user's own `!` commands stay ungated
- *   MCP rules  -> no pi translation; surfaced in a skip notice, never applied
+ * Translation (deny list -> gotgenes surfaces), deny-only, never "ask":
  *
- * Allow rules are inert: the deny list enumerates secret files explicitly
- * (.env.example matches no deny pattern), and Claude's real precedence is
- * deny-wins, so there is no allow-override semantics to reproduce.
+ *   Read(...)   -> path_read  (cross-cutting: read tool, bash reads, ls/find/grep)
+ *   Edit/Write  -> path_write (cross-cutting: write/edit tools, redirects)
+ *   Bash(...)   -> bash       (their tree-sitter command enumeration is a
+ *                              superset of our old segment matching)
+ *   mcp__srv__t -> mcp        (previously a skip notice; now enforced)
  *
- * Bash patterns match the whole command and every segment split on &&, ||,
- * `;`, `|`, and newlines, so chaining cannot slip past a prefix pattern.
- * Deliberate obfuscation still wins: per pi's security.md this gate is
- * friction, not a security boundary. Real isolation needs an OS boundary.
+ * The universal fallback is "allow": unmatched actions pass, so semantics stay
+ * deny-wins/default-allow and headless -p/json/rpc sessions never prompt.
  *
  * Fail loud: a missing, empty, or unparseable permission source leaves the
- * gate UNGATED and says so on every session start - error notify plus a
- * persistent widget in TUI, one console.error line in headless modes.
+ * derived config STALE and says so on every session start - error notify plus
+ * a persistent widget in TUI, one console.error line in headless modes. The
+ * last generated config keeps enforcing; the deny list itself is what lags.
+ *
+ * Propagation: a deny-list edit reaches the config file during the next
+ * session start. The consumer reloads config from disk at session_start with
+ * mtime-based cache invalidation, so whichever session_start handler runs
+ * first, the change is live no later than the following session.
  *
  * Module top imports only node builtins so `node --test` can exercise the
  * pure helpers without resolving pi packages; the factory resolves
  * @earendil-works/pi-coding-agent dynamically at runtime.
  */
 
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
@@ -38,144 +43,134 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 // Pure rule engine
 // ---------------------------------------------------------------------------
 
-export type RuleFamily = 'path-read' | 'path-write' | 'bash';
+export type RuleFamily = 'path-read' | 'path-write' | 'bash' | 'mcp';
 
-export interface GateRule {
+export interface DenyRule {
   family: RuleFamily;
-  /** Pattern inside the Claude rule, i.e. a path glob or a command prefix. */
+  /** Pattern inside the Claude rule: a path glob, a command pattern, or an MCP rule id. */
   pattern: string;
   /** Full source rule as written in the deny list, e.g. a Read rule for .env. */
   source: string;
-  regex: RegExp;
 }
 
 export type GateConfig =
-  | { status: 'ok'; rules: GateRule[]; skipped: string[]; allowCount: number }
+  | { status: 'ok'; rules: DenyRule[]; skipped: string[]; allowCount: number }
   | { status: 'missing'; reason: string }
   | { status: 'empty'; reason: string }
   | { status: 'error'; reason: string };
 
-/** Structural subset of the pi context the gate touches (keeps helpers testable). */
-interface GateUiContext {
-  hasUI: boolean;
-  ui: {
-    notify(message: string, level: 'info' | 'warning' | 'error'): void;
-    setWidget(id: string, widget: string[] | undefined): void;
-  };
-}
-
 const RULE_RE = /^(Read|Edit|Write|Bash)\((.*)\)$/s;
+const MCP_RE = /^mcp__(.+)__([^_]+(?:_[^_]+)*)$/;
 
 /** Classify one Claude permission rule; undefined when pi cannot enforce it. */
 export function classifyRule(source: string): { family: RuleFamily; pattern: string } | undefined {
-  const match = RULE_RE.exec(source.trim());
-  if (match === null) return undefined;
-  const verb = match[1];
-  const pattern = match[2];
-  if (verb === 'Bash') return { family: 'bash', pattern };
-  if (verb === 'Read') return { family: 'path-read', pattern };
-  // Edit and Write both bind edit+write: file-tool rules enforce a superset.
-  if (verb === 'Edit' || verb === 'Write') return { family: 'path-write', pattern };
+  const trimmed = source.trim();
+  const match = RULE_RE.exec(trimmed);
+  if (match !== null) {
+    const verb = match[1];
+    const pattern = match[2];
+    if (verb === 'Bash') return { family: 'bash', pattern };
+    if (verb === 'Read') return { family: 'path-read', pattern };
+    // Edit and Write both bind writes: file-tool rules enforce a superset.
+    if (verb === 'Edit' || verb === 'Write') return { family: 'path-write', pattern };
+    return undefined;
+  }
+  if (MCP_RE.test(trimmed)) return { family: 'mcp', pattern: trimmed };
   return undefined;
 }
 
-function escapeRegexChar(char: string): string {
-  return /[.+^${}()|[\]\\?]/.test(char) ? `\\${char}` : char;
+/**
+ * Translate a Claude path glob to a gotgenes wildcard pattern. Their `*`
+ * crosses `/` (anchored regex with the `s` flag), so collapsing `**` to `*`
+ * preserves coverage; a trailing double-star loses only the directory entry itself,
+ * which is narrower than the old gate for reads of the bare directory and a
+ * superset for everything else (ls/find/grep were never gated before).
+ */
+export function translatePathPattern(pattern: string): string {
+  return pattern.replaceAll('**', '*');
 }
 
 /**
- * Compile a path glob. A tilde expands to home; a double-star may match zero
- * or more segments; a trailing double-star matches the directory itself plus
- * everything under it; a bare star stays inside one segment.
+ * Translate a Claude MCP rule (`mcp__server__tool`, server may contain single
+ * underscores) to a gotgenes mcp-surface pattern. Adjudicated targets cover the
+ * bare server name, `server_tool`, and `server:tool` spellings, so a trailing
+ * `*` tool matches every spelling.
  */
-export function compilePathGlob(pattern: string): RegExp {
-  let glob = pattern;
-  if (glob.startsWith('~')) glob = homedir() + glob.slice(1);
-  // A trailing '/**' also matches the directory itself: drop the marker slash
-  // and append an optional descendant arm after tokenizing the rest.
-  const matchesDirItself = glob.endsWith('/**');
-  if (matchesDirItself) glob = glob.slice(0, -3);
-  let source = '';
-  for (let i = 0; i < glob.length; i++) {
-    const char = glob.charAt(i);
-    if (char !== '*') {
-      source += escapeRegexChar(char);
-      continue;
-    }
-    if (glob.charAt(i + 1) === '*') {
-      i++;
-      if (glob.charAt(i + 1) === '/') {
-        i++;
-        source += '(?:.*/)?';
-      } else {
-        // Trailing ** must also match the directory itself.
-        source += i + 1 < glob.length ? '.*' : '(?:/.*)?';
-      }
-    } else {
-      source += '[^/]*';
-    }
-  }
-  if (matchesDirItself) source += '(?:/.*)?';
-  return new RegExp(`^${source}$`);
+export function translateMcpRule(source: string): string | undefined {
+  const match = MCP_RE.exec(source.trim());
+  if (match === null) return undefined;
+  const server = match[1];
+  const tool = match[2];
+  return tool === '*' ? `${server}*` : `${server}:${tool}`;
+}
+
+/** State entries keep a deterministic surface map; deny-only maps are order-free. */
+export type SurfaceMap = Record<string, 'deny'>;
+
+function denyMap(patterns: string[]): SurfaceMap {
+  const map: SurfaceMap = {};
+  for (const pattern of [...new Set(patterns)].sort()) map[pattern] = 'deny';
+  return map;
 }
 
 /**
- * Compile a bash pattern. A leading star searches anywhere; otherwise the
- * pattern anchors at a segment start. A tilde inside the pattern compiles
- * twice (literal and home-expanded), because the model types both spellings.
+ * Derive the permission surfaces from classified deny rules. Read rules and
+ * Edit rules stay directional (path_read / path_write): their pattern sets are
+ * deliberately different (shell histories and editor storage are read-only
+ * secrets; lockfiles are write-protected but readable), so a merged
+ * cross-cutting `path` surface would deny lockfile reads - a regression, not
+ * a superset.
  */
-export function compileBashRule(pattern: string): RegExp {
-  const toSource = (body: string): string =>
-    body.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replaceAll('*', '.*');
-  const bodies = [pattern];
-  if (pattern.includes('~')) bodies.push(pattern.replaceAll('~', homedir()));
-  const source = bodies
-    .map((body) => (body.startsWith('*') ? toSource(body) : `(?:^${toSource(body)})`))
-    .join('|');
-  return new RegExp(source);
-}
-
-export function rulesForFamily(config: { rules: GateRule[] }, family: RuleFamily): GateRule[] {
-  return config.rules.filter((rule) => rule.family === family);
-}
-
-/** Expand a leading `~` and resolve a tool path against cwd for matching. */
-export function resolveToolPath(cwd: string, rawPath: string): string {
-  let candidate = rawPath.trim();
-  if (candidate === '~') candidate = homedir();
-  else if (candidate.startsWith('~/')) candidate = join(homedir(), candidate.slice(2));
-  return isAbsolute(candidate) ? candidate : resolve(cwd, candidate);
-}
-
-/** First rule whose compiled regex matches the resolved path, or null. */
-export function matchPath(cwd: string, rawPath: string, rules: GateRule[]): GateRule | null {
-  const absolute = resolveToolPath(cwd, rawPath);
-  for (const rule of rules) {
-    if (rule.regex.test(absolute)) return rule;
-  }
-  return null; // no deny rule covers this path
-}
-
-/** Split a command into executable segments (`&&`, `||`, `;`, `|`, newlines). */
-export function bashSegments(command: string): string[] {
-  return command
-    .split(/&&|\|\||[;|\n]/)
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-}
-
-/** First bash rule matching the whole command or any segment, or null. */
-export function matchBash(command: string, rules: GateRule[]): GateRule | null {
-  const targets = [command, ...bashSegments(command)];
-  for (const rule of rules) {
-    for (const target of targets) {
-      if (rule.regex.test(target)) return rule;
+export function derivePermissionPolicy(config: Extract<GateConfig, { status: 'ok' }>): {
+  universal: 'allow';
+  pathRead: SurfaceMap;
+  pathWrite: SurfaceMap;
+  bash: SurfaceMap;
+  mcp: SurfaceMap;
+} {
+  const read: string[] = [];
+  const write: string[] = [];
+  const bash: string[] = [];
+  const mcp: string[] = [];
+  for (const rule of config.rules) {
+    if (rule.family === 'path-read') read.push(translatePathPattern(rule.pattern));
+    else if (rule.family === 'path-write') write.push(translatePathPattern(rule.pattern));
+    else if (rule.family === 'bash') bash.push(rule.pattern);
+    else {
+      const pattern = translateMcpRule(rule.pattern);
+      if (pattern !== undefined) mcp.push(pattern);
     }
   }
-  return null;
+  return {
+    universal: 'allow',
+    pathRead: denyMap(read),
+    pathWrite: denyMap(write),
+    bash: denyMap(bash),
+    mcp: denyMap(mcp),
+  };
 }
 
-/** Load and translate the permissions block; never throws. */
+const PERMISSIONS_SCHEMA_URL =
+  'https://raw.githubusercontent.com/gotgenes/pi-packages/main/packages/pi-permission-system/schemas/permissions.schema.json';
+
+/** Assemble the full config document the adopted package validates and loads. */
+export function buildPolicyDocument(policy: ReturnType<typeof derivePermissionPolicy>): {
+  $schema: string;
+  permission: Record<string, unknown>;
+} {
+  const surfaces: Record<string, unknown> = { '*': policy.universal };
+  if (Object.keys(policy.pathRead).length > 0) surfaces.path_read = policy.pathRead;
+  if (Object.keys(policy.pathWrite).length > 0) surfaces.path_write = policy.pathWrite;
+  if (Object.keys(policy.bash).length > 0) surfaces.bash = policy.bash;
+  if (Object.keys(policy.mcp).length > 0) surfaces.mcp = policy.mcp;
+  return { $schema: PERMISSIONS_SCHEMA_URL, permission: surfaces };
+}
+
+export function serializePolicyDocument(document: ReturnType<typeof buildPolicyDocument>): string {
+  return `${JSON.stringify(document, null, 2)}\n`;
+}
+
+/** Load and classify the permissions block; never throws. */
 export function loadGateConfig(settingsPath: string): GateConfig {
   let parsed: unknown;
   try {
@@ -201,7 +196,7 @@ export function loadGateConfig(settingsPath: string): GateConfig {
   const allow = (permissions as { allow?: unknown }).allow;
   const allowCount = Array.isArray(allow) ? allow.length : 0;
 
-  const rules: GateRule[] = [];
+  const rules: DenyRule[] = [];
   const skipped: string[] = [];
   for (const source of deny) {
     if (typeof source !== 'string') {
@@ -213,9 +208,7 @@ export function loadGateConfig(settingsPath: string): GateConfig {
       skipped.push(source);
       continue;
     }
-    const regex =
-      classified.family === 'bash' ? compileBashRule(classified.pattern) : compilePathGlob(classified.pattern);
-    rules.push({ ...classified, source, regex });
+    rules.push({ ...classified, source });
   }
   if (rules.length === 0) {
     return { status: 'empty', reason: 'deny list translates to zero pi rules' };
@@ -251,15 +244,10 @@ export function resolvePermissionSource(candidates: string[]): SourceSelection {
 // ---------------------------------------------------------------------------
 
 const WIDGET_ID = 'permission-gate';
-
-function gateBlockReason(hit: GateRule): string {
-  return `Blocked by permission-gate: ${hit.source} from the harness deny list. Stop touching this path or command and pick a different approach.`;
-}
+const CONSUMER_DIR = 'pi-permission-system';
 
 export default async function (pi: ExtensionAPI) {
-  const { getAgentDir, isToolCallEventType } = await import('@earendil-works/pi-coding-agent');
-
-  let gates: Extract<GateConfig, { status: 'ok' }> | undefined;
+  const { getAgentDir } = await import('@earendil-works/pi-coding-agent');
 
   pi.on('session_start', (_event, ctx) => {
     let moduleDir: string;
@@ -278,56 +266,51 @@ export default async function (pi: ExtensionAPI) {
     ];
     const selection = resolvePermissionSource(candidates);
 
-    if (selection.status !== 'ok') {
-      gates = undefined;
-      const message = `Permission gate UNGATED (${selection.reason}); deny list is not enforced this session.`;
+    const failLoud = (message: string): void => {
       if (ctx.hasUI) {
         ctx.ui.notify(message, 'error');
-        ctx.ui.setWidget(WIDGET_ID, ['perms: UNGATED - deny list not enforced']);
+        ctx.ui.setWidget(WIDGET_ID, ['perms: DERIVED POLICY STALE - deny list not refreshed']);
       } else {
         console.error(message);
       }
+    };
+
+    if (selection.status !== 'ok') {
+      failLoud(`Derived policy STALE (${selection.reason}); the permission system keeps the last generated config.`);
       return;
     }
 
-    const config = selection.config;
-    gates = config;
+    // Writes go through the agent dir so both account dirs land on the same
+    // tracked file via the extensions symlink; it is also the path the
+    // consumer resolves (<agent dir>/extensions/pi-permission-system/config.json).
+    const configPath = join(getAgentDir(), 'extensions', CONSUMER_DIR, 'config.json');
+    const document = buildPolicyDocument(derivePermissionPolicy(selection.config));
+    const serialized = serializePolicyDocument(document);
+    let unchanged = false;
+    try {
+      const existing = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
+      unchanged = existing === serialized;
+      if (!unchanged) {
+        mkdirSync(dirname(configPath), { recursive: true });
+        writeFileSync(configPath, serialized);
+      }
+    } catch (err) {
+      failLoud(
+        `Derived policy could not be written to ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+
     if (ctx.hasUI) ctx.ui.setWidget(WIDGET_ID, undefined);
 
-    const summary = [`enforcing ${config.rules.length} deny rules from ${selection.path}`];
-    if (config.skipped.length > 0) {
-      summary.push(`skipped ${config.skipped.length} (no pi translation): ${config.skipped.join(', ')}`);
+    const summary = [`derived ${selection.config.rules.length} deny rules from ${selection.path}`];
+    if (selection.config.skipped.length > 0) {
+      summary.push(`skipped ${selection.config.skipped.length} (no translation): ${selection.config.skipped.join(', ')}`);
     }
-    if (config.allowCount > 0) {
-      summary.push(`${config.allowCount} allow rules inert (deny-wins)`);
+    if (selection.config.allowCount > 0) {
+      summary.push(`${selection.config.allowCount} allow rules inert (deny-wins)`);
     }
-    if (ctx.hasUI) ctx.ui.notify(`Permission gate: ${summary.join('; ')}`, 'info');
-  });
-
-  pi.on('tool_call', (event, ctx) => {
-    if (gates === undefined) return;
-
-    if (isToolCallEventType('bash', event)) {
-      const hit = matchBash(event.input.command, rulesForFamily(gates, 'bash'));
-      if (hit !== null) return { block: true, reason: gateBlockReason(hit) };
-      return;
-    }
-
-    const family: RuleFamily | undefined =
-      event.toolName === 'read'
-        ? 'path-read'
-        : event.toolName === 'write' || event.toolName === 'edit'
-          ? 'path-write'
-          : undefined;
-    if (family === undefined) return;
-
-    let rawPath: string | undefined;
-    if (isToolCallEventType('read', event)) rawPath = event.input.path;
-    else if (isToolCallEventType('write', event)) rawPath = event.input.path;
-    else if (isToolCallEventType('edit', event)) rawPath = event.input.path;
-    if (rawPath === undefined) return;
-
-    const hit = matchPath(ctx.cwd, rawPath, rulesForFamily(gates, family));
-    if (hit !== null) return { block: true, reason: gateBlockReason(hit) };
+    summary.push(`policy -> ${configPath}${unchanged ? ' (unchanged)' : ''}`);
+    if (ctx.hasUI) ctx.ui.notify(`Derived policy: ${summary.join('; ')}`, 'info');
   });
 }
