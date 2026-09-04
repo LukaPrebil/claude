@@ -56,7 +56,7 @@ npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 bash scripts/setup-hosts.sh --apply --host pi
 ```
 
-The Pi selector links instructions, `extensions/`, and `settings.json` into every configured pi agent dir - `PI_CONFIG_DIRS` (space-separated list) defaults to `~/.pi/agent` plus the personal-account dir `~/.pi-personal/agent`; the single-dir `PI_CODING_AGENT_DIR` override takes precedence when set. It links shared skills under `~/.agents/skills`. These resources apply in interactive, print, JSON, and RPC modes. See [Pi's usage documentation](https://pi.dev/docs/latest/usage).
+The Pi selector links instructions, `extensions/`, `settings.json`, and `models.json` into every configured pi agent dir. `PI_CONFIG_DIRS` defaults to `~/.pi/agent` plus `~/.pi-personal/agent`; `PI_CODING_AGENT_DIR` overrides it. It links shared skills under `~/.agents/skills`. These resources apply in interactive, print, JSON, and RPC modes. See [Pi's usage documentation](https://pi.dev/docs/latest/usage).
 
 The bootstrap does not install or upgrade Pi. It does not manage providers, models, credentials, project trust, tools, or isolation. Pi has no built-in sandbox, so unattended work needs an external boundary. See [Pi's security guidance](https://pi.dev/docs/latest/security). Auto-compaction stays off by choice: a long session is handed off or stopped rather than silently summarized.
 
