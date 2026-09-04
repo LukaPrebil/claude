@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import {
   extractOpenAIAccountId,
   parseCodexUsagePayload,
-} from '../pi/statusline-usage.ts';
+} from '../pi/extensions/statusline/usage.ts';
 
 function jwtWithPayload(payload: object): string {
   return `header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.signature`;
