@@ -1,3 +1,17 @@
+# [0.4.0](https://github.com/LukaPrebil/harness-config/compare/v0.3.0...v0.4.0) (2026-09-04)
+
+
+### Bug Fixes
+
+* **pi:** derive quota labels from window duration ([#17](https://github.com/LukaPrebil/harness-config/issues/17)) ([fbe7fa7](https://github.com/LukaPrebil/harness-config/commit/fbe7fa7e7a120cdb88890c04129460848291b223))
+* **pi:** keep statusline helper in extension tree ([#16](https://github.com/LukaPrebil/harness-config/issues/16)) ([44beafd](https://github.com/LukaPrebil/harness-config/commit/44beafdf44d916fb56cc91009f008805e0704174))
+
+
+### Features
+
+* **config:** enable OpenAI long context ([#18](https://github.com/LukaPrebil/harness-config/issues/18)) ([8036a0e](https://github.com/LukaPrebil/harness-config/commit/8036a0e156b2df44bf800e6ce2fecf464034ac97))
+* **pi:** show OpenAI Codex usage limits ([#15](https://github.com/LukaPrebil/harness-config/issues/15)) ([eb5ff00](https://github.com/LukaPrebil/harness-config/commit/eb5ff008f25a512f77379650501c6a053839120e))
+
 # [0.3.0](https://github.com/LukaPrebil/harness-config/compare/v0.2.0...v0.3.0) (2026-09-01)
 
 
