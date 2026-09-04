@@ -10,19 +10,19 @@
  * at 50%/80%); everything else is dim, so a red window reads at a glance.
  * Sections render only when their data exists - no fake zeros.
  *
- * Usage windows come from provider rate-limit response headers captured on every
- * request pi already makes (after_provider_response). No account endpoints are
- * polled and auth.json is never read. Undocumented families:
+ * Usage windows come from provider response headers. OpenAI Codex usage also
+ * refreshes from the account usage endpoint because WebSocket responses do not
+ * expose headers to extensions. The extension resolves runtime auth through pi
+ * and never reads auth.json. Undocumented sources:
  *   - anthropic-ratelimit-unified-{5h,7d}-utilization / -reset / -status (OAuth)
- *   - x-codex-primary/secondary-used-percent family (withdrawn by OpenAI as of
- *     June 2026; kept so it comes back free if restored)
+ *   - x-codex-primary/secondary-used-percent response headers
+ *   - OpenAI Codex /backend-api/wham/usage
  *
  * Window data is strictly per active provider: switching models to a different
  * provider clears the block until that provider's own first response. Fresh
  * windows are alert-colored, dim after 10 min, gone after 1 h.
  *
- * Portability: single file, imports only pi packages and node builtins, so it
- * can move into a pi-config repo (domengabrovsek/claude-style) unchanged.
+ * Portability: imports only the adjacent parser, pi packages, and node builtins.
  *
  * Approved plan: .claude/state/plans/2026-08-31-pi-statusline-footer.md
  */
@@ -32,6 +32,14 @@ import { basename } from "node:path";
 
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	extractOpenAIAccountId,
+	parseCodexUsagePayload,
+	type JsonValue,
+	type UsageWindow,
+} from "../statusline-usage.ts";
+
+export type { UsageWindow } from "../statusline-usage.ts";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -70,15 +78,6 @@ const num = (v: string | undefined): number | null => {
 	const n = parseFloat(v);
 	return Number.isFinite(n) ? n : null;
 };
-
-export interface UsageWindow {
-	/** Percentage used; null when the provider reported no value. */
-	pct: number | null;
-	/** Epoch seconds when the window resets, straight from the headers. */
-	resetEpochSec: number | null;
-	/** Provider said the window is binding: rejected / rate_limited / ... */
-	rejected: boolean;
-}
 
 export interface UsageWindows {
 	/** Provider id of the model that produced these headers. */
@@ -121,7 +120,7 @@ export function parseUnifiedHeaders(
 	return fiveHour || sevenDay ? { fiveHour, sevenDay } : undefined;
 }
 
-/** Parse the x-codex-* header family (withdrawn mid-2026; cheap to keep). */
+/** Parse the x-codex-* response header family. */
 export function parseCodexHeaders(headers: Record<string, string>): Pick<UsageWindows, "fiveHour" | "sevenDay"> | undefined {
 	const parse = (pctName: string, resetName: string): UsageWindow | null => {
 		if (headers[pctName] === undefined && headers[resetName] === undefined) return null;
@@ -282,8 +281,14 @@ interface LiveFooter {
 let requestRenderFn: (() => void) | undefined;
 let currentWindows: UsageWindows | undefined;
 let unsubscribeBranch: (() => void) | undefined;
+let usageRefreshAbort: AbortController | undefined;
+let usageRefreshInFlight = false;
+let usageLastAttemptAt = 0;
 
 const DIRTY_TTL_MS = 60_000;
+const USAGE_REFRESH_TTL_MS = 60_000;
+const USAGE_REFRESH_TIMEOUT_MS = 5_000;
+const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const gitState = {
 	dirty: undefined as boolean | undefined,
 	checkedAt: 0,
@@ -318,6 +323,50 @@ function captureProviderHeaders(headers: Record<string, string>, provider: strin
 	if (parsed) currentWindows = { provider, ...parsed, capturedAt: Date.now() };
 }
 
+interface UsageRefreshContext {
+	model?: { provider: string };
+	modelRegistry: {
+		getProviderAuth(provider: string): Promise<{ auth: { apiKey?: string } } | undefined>;
+	};
+}
+
+async function refreshCodexUsage(ctx: UsageRefreshContext): Promise<void> {
+	if (ctx.model?.provider !== "openai-codex" || usageRefreshInFlight) return;
+	const now = Date.now();
+	if (now - usageLastAttemptAt < USAGE_REFRESH_TTL_MS) return;
+	usageLastAttemptAt = now;
+	usageRefreshInFlight = true;
+
+	try {
+		const resolved = await ctx.modelRegistry.getProviderAuth("openai-codex");
+		const token = resolved?.auth.apiKey;
+		const accountId = token ? extractOpenAIAccountId(token) : undefined;
+		if (!token || !accountId) return;
+		const sessionSignal = usageRefreshAbort?.signal;
+		const timeoutSignal = AbortSignal.timeout(USAGE_REFRESH_TIMEOUT_MS);
+		const signal = sessionSignal ? AbortSignal.any([sessionSignal, timeoutSignal]) : timeoutSignal;
+		const response = await fetch(CODEX_USAGE_URL, {
+			headers: {
+				Accept: "application/json",
+				Authorization: `Bearer ${token}`,
+				"ChatGPT-Account-Id": accountId,
+				originator: "pi",
+			},
+			redirect: "error",
+			signal,
+		});
+		if (!response.ok) return;
+		const parsed = parseCodexUsagePayload((await response.json()) as JsonValue);
+		if (!parsed) return;
+		currentWindows = { provider: "openai-codex", ...parsed, capturedAt: Date.now() };
+		requestRenderFn?.();
+	} catch {
+		/* The footer keeps the last valid snapshot when the optional refresh fails. */
+	} finally {
+		usageRefreshInFlight = false;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
@@ -326,6 +375,9 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 
+		usageRefreshAbort?.abort();
+		usageRefreshAbort = new AbortController();
+		usageLastAttemptAt = 0;
 		unsubscribeBranch?.();
 		unsubscribeBranch = undefined;
 
@@ -406,16 +458,25 @@ export default function (pi: ExtensionAPI) {
 				},
 			};
 		});
+		void refreshCodexUsage(ctx);
 	});
 
-	pi.on("model_select", (event, _ctx) => {
+	pi.on("model_select", (event, ctx) => {
 		if (currentWindows && currentWindows.provider !== event.model.provider) {
 			// Windows are provider-scoped; numbers from the old provider must not
 			// render next to the new model.
 			currentWindows = undefined;
 		}
+		if (event.model.provider === "openai-codex" && event.previousModel?.provider !== "openai-codex") {
+			usageLastAttemptAt = 0;
+		}
 		// Renders read ctx.model live; this just repaints now.
 		requestRenderFn?.();
+		void refreshCodexUsage(ctx);
+	});
+
+	pi.on("agent_settled", (_event, ctx) => {
+		void refreshCodexUsage(ctx);
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
@@ -432,5 +493,10 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.model) return;
 		captureProviderHeaders(event.headers, ctx.model.provider);
 		requestRenderFn?.();
+	});
+
+	pi.on("session_shutdown", () => {
+		usageRefreshAbort?.abort();
+		usageRefreshAbort = undefined;
 	});
 }
