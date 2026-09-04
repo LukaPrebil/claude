@@ -71,6 +71,7 @@ new_case() {
   : > "$TEST_REPO/.github/pull_request_template.md"
   mkdir -p "$TEST_REPO/pi/extensions"
   : > "$TEST_REPO/pi/settings.json"
+  : > "$TEST_REPO/pi/models.json"
   : > "$TEST_REPO/pi/extensions/statusline.ts"
 }
 
@@ -158,18 +159,20 @@ hooks|hooks
 rules|rules
 EOF
 assert_true "Codex AGENTS.md is shared" assert_link "$TEST_HOME/.codex/AGENTS.md" "$TEST_REPO/AGENTS.md"
-assert_true "Pi base dir receives instructions and resources" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi/agent/agents" "$TEST_REPO/agents"
-assert_true "Pi personal dir receives instructions and resources" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi-personal/agent/agents" "$TEST_REPO/agents"
+assert_true "Pi base dir receives instructions and resources" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi/agent/models.json" "$TEST_REPO/pi/models.json" && assert_link "$TEST_HOME/.pi/agent/agents" "$TEST_REPO/agents"
+assert_true "Pi personal dir receives instructions and resources" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi-personal/agent/models.json" "$TEST_REPO/pi/models.json" && assert_link "$TEST_HOME/.pi-personal/agent/agents" "$TEST_REPO/agents"
 assert_true "shared skills are repo-owned" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Codex fallback is created" grep -Fq 'project_doc_fallback_filenames = ["CLAUDE.md"]' "$TEST_HOME/.codex/config.toml"
 assert_true "Codex status line is created" grep -Fq 'status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]' "$TEST_HOME/.codex/config.toml"
+assert_true "Codex long context is created" grep -Fq 'model_context_window = 1050000' "$TEST_HOME/.codex/config.toml"
+assert_true "Codex long-context compaction limit is created" grep -Fq 'model_auto_compact_token_limit = 950000' "$TEST_HOME/.codex/config.toml"
 assert_success "clean check exits zero" run_setup --check
 
 # A Pi-only selection includes every shared resource Pi needs.
 new_case pi_only
 assert_success "Pi-only apply succeeds" run_setup --apply --host pi
 assert_true "Pi-only apply links instructions" assert_link "$TEST_HOME/.pi/agent/AGENTS.md" "$TEST_REPO/AGENTS.md"
-assert_true "Pi-only apply links the personal dir too" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi-personal/agent/agents" "$TEST_REPO/agents"
+assert_true "Pi-only apply links the personal dir too" assert_link "$TEST_HOME/.pi-personal/agent/AGENTS.md" "$TEST_REPO/AGENTS.md" && assert_link "$TEST_HOME/.pi-personal/agent/extensions" "$TEST_REPO/pi/extensions" && assert_link "$TEST_HOME/.pi-personal/agent/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$TEST_HOME/.pi-personal/agent/models.json" "$TEST_REPO/pi/models.json" && assert_link "$TEST_HOME/.pi-personal/agent/agents" "$TEST_REPO/agents"
 assert_true "Pi-only apply links shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_true "Pi-only apply skips Codex" test ! -e "$TEST_HOME/.codex"
 assert_success "Pi-only check exits zero" run_setup --check --host pi
@@ -182,7 +185,7 @@ new_case pi_custom_dir
 CUSTOM_PI_DIR="$CASE_DIR/custom-pi"
 assert_success "Pi custom directory apply succeeds" run_setup_with_pi_dir "$CUSTOM_PI_DIR" --apply --host pi
 assert_true "Pi custom directory receives instructions" assert_link "$CUSTOM_PI_DIR/AGENTS.md" "$TEST_REPO/AGENTS.md"
-assert_true "Pi custom directory receives extension and settings links" assert_link "$CUSTOM_PI_DIR/extensions" "$TEST_REPO/pi/extensions" && assert_link "$CUSTOM_PI_DIR/settings.json" "$TEST_REPO/pi/settings.json"
+assert_true "Pi custom directory receives extension and settings links" assert_link "$CUSTOM_PI_DIR/extensions" "$TEST_REPO/pi/extensions" && assert_link "$CUSTOM_PI_DIR/settings.json" "$TEST_REPO/pi/settings.json" && assert_link "$CUSTOM_PI_DIR/models.json" "$TEST_REPO/pi/models.json"
 assert_true "Pi default directory stays absent" test ! -e "$TEST_HOME/.pi"
 assert_true "Pi custom directory still gets shared skills" assert_link "$TEST_HOME/.agents/skills" "$TEST_REPO/skills"
 assert_success "Pi custom directory check exits zero" run_setup_with_pi_dir "$CUSTOM_PI_DIR" --check --host pi
@@ -282,7 +285,7 @@ assert_true "custom status migration has one backup" test "$(backup_count "$TEST
 # A compatible fallback and custom status line are a complete no-op.
 new_case codex_compatible
 mkdir -p "$TEST_HOME/.codex"
-printf 'project_doc_fallback_filenames = ["AGENT.md", "CLAUDE.md"]\n\n[tui]\nstatus_line = ["git-branch"]\n' > "$TEST_HOME/.codex/config.toml"
+printf 'project_doc_fallback_filenames = ["AGENT.md", "CLAUDE.md"]\nmodel_context_window = 1050000\nmodel_auto_compact_token_limit = 950000\n\n[tui]\nstatus_line = ["git-branch"]\n' > "$TEST_HOME/.codex/config.toml"
 assert_success "compatible Codex fallback is unchanged" run_setup --apply --host codex
 assert_true "compatible custom status is unchanged" grep -Fq 'status_line = ["git-branch"]' "$TEST_HOME/.codex/config.toml"
 assert_true "compatible Codex config has no backup" test "$(backup_count "$TEST_HOME/.codex/config.toml")" -eq 0

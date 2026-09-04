@@ -227,10 +227,16 @@ manage_link() {
 manage_codex_config() {
   CONFIG="$CODEX_DIR/config.toml"
   FALLBACK='project_doc_fallback_filenames = ["CLAUDE.md"]'
+  CONTEXT_WINDOW='model_context_window = 1050000'
+  COMPACT_LIMIT='model_auto_compact_token_limit = 950000'
   STATUS_LINE='status_line = ["project-name", "git-branch", "model-with-reasoning", "context-used", "five-hour-limit", "weekly-limit", "thread-credits", "estimated-thread-cost"]'
   FALLBACK_MANUAL="manually set TOML root: $FALLBACK"
+  CONTEXT_MANUAL="manually set TOML root: $CONTEXT_WINDOW"
+  COMPACT_MANUAL="manually set TOML root: $COMPACT_LIMIT"
   STATUS_MANUAL="manually set under [tui]: $STATUS_LINE"
   ADD_FALLBACK=1
+  ADD_CONTEXT=1
+  ADD_COMPACT=1
   ADD_STATUS=1
   TUI_COUNT=0
 
@@ -266,6 +272,50 @@ manage_codex_config() {
           ;;
         table:*)
           report "codex/config.toml" "REFUSED" "fallback is not at TOML root; $FALLBACK_MANUAL"
+          mark_issue
+          return
+          ;;
+      esac
+    fi
+
+    CONTEXT_INFO=$(awk '
+      /^[[:space:]]*\[/ { in_table=1 }
+      /^[[:space:]]*model_context_window[[:space:]]*=/ {
+        if (in_table) print "table:" $0; else print "root:" $0
+      }
+    ' "$CONFIG")
+    CONTEXT_COUNT=$(printf "%s\n" "$CONTEXT_INFO" | awk 'NF { count++ } END { print count+0 }')
+    if [ "$CONTEXT_COUNT" -gt 1 ]; then
+      report "codex/config.toml" "REFUSED" "multiple context-window keys; $CONTEXT_MANUAL"
+      mark_issue
+      return
+    elif [ "$CONTEXT_COUNT" -eq 1 ]; then
+      case "$CONTEXT_INFO" in
+        root:*) ADD_CONTEXT=0 ;;
+        table:*)
+          report "codex/config.toml" "REFUSED" "context window is not at TOML root; $CONTEXT_MANUAL"
+          mark_issue
+          return
+          ;;
+      esac
+    fi
+
+    COMPACT_INFO=$(awk '
+      /^[[:space:]]*\[/ { in_table=1 }
+      /^[[:space:]]*model_auto_compact_token_limit[[:space:]]*=/ {
+        if (in_table) print "table:" $0; else print "root:" $0
+      }
+    ' "$CONFIG")
+    COMPACT_COUNT=$(printf "%s\n" "$COMPACT_INFO" | awk 'NF { count++ } END { print count+0 }')
+    if [ "$COMPACT_COUNT" -gt 1 ]; then
+      report "codex/config.toml" "REFUSED" "multiple auto-compact keys; $COMPACT_MANUAL"
+      mark_issue
+      return
+    elif [ "$COMPACT_COUNT" -eq 1 ]; then
+      case "$COMPACT_INFO" in
+        root:*) ADD_COMPACT=0 ;;
+        table:*)
+          report "codex/config.toml" "REFUSED" "auto-compact limit is not at TOML root; $COMPACT_MANUAL"
           mark_issue
           return
           ;;
@@ -309,14 +359,22 @@ manage_codex_config() {
     fi
   fi
 
-  if [ "$ADD_FALLBACK" -eq 0 ] && [ "$ADD_STATUS" -eq 0 ]; then
-    report "codex/config.toml" "OK" "fallback and status line configured"
+  if [ "$ADD_FALLBACK" -eq 0 ] && [ "$ADD_CONTEXT" -eq 0 ] && [ "$ADD_COMPACT" -eq 0 ] && [ "$ADD_STATUS" -eq 0 ]; then
+    report "codex/config.toml" "OK" "managed defaults configured"
     return
   fi
 
   if [ "$MODE" = "check" ]; then
     if [ "$ADD_FALLBACK" -eq 1 ]; then
       report "codex/config.toml" "MISSING" "would add root fallback key"
+      mark_issue
+    fi
+    if [ "$ADD_CONTEXT" -eq 1 ]; then
+      report "codex/config.toml" "MISSING" "would add 1.05M context window"
+      mark_issue
+    fi
+    if [ "$ADD_COMPACT" -eq 1 ]; then
+      report "codex/config.toml" "MISSING" "would add long-context compaction limit"
       mark_issue
     fi
     if [ "$ADD_STATUS" -eq 1 ]; then
@@ -339,14 +397,21 @@ manage_codex_config() {
       mark_issue
       return
     fi
+    PREPENDED_ROOT=$((ADD_FALLBACK + ADD_CONTEXT + ADD_COMPACT))
     if {
       if [ "$ADD_FALLBACK" -eq 1 ]; then
         printf "%s\n" "$FALLBACK"
       fi
-      if [ "$ADD_FALLBACK" -eq 1 ] && [ -s "$CONFIG_BACKUP" ]; then
+      if [ "$ADD_CONTEXT" -eq 1 ]; then
+        printf "%s\n" "$CONTEXT_WINDOW"
+      fi
+      if [ "$ADD_COMPACT" -eq 1 ]; then
+        printf "%s\n" "$COMPACT_LIMIT"
+      fi
+      if [ "$PREPENDED_ROOT" -gt 0 ] && [ -s "$CONFIG_BACKUP" ]; then
         printf "\n"
       fi
-      awk -v add_status="$ADD_STATUS" -v prepended="$ADD_FALLBACK" -v status_line="$STATUS_LINE" '
+      awk -v add_status="$ADD_STATUS" -v prepended="$PREPENDED_ROOT" -v status_line="$STATUS_LINE" '
         { print }
         add_status && $0 ~ /^[[:space:]]*\[tui\][[:space:]]*(#.*)?$/ {
           print status_line
@@ -361,13 +426,7 @@ manage_codex_config() {
         }
       ' "$CONFIG_BACKUP"
     } > "$CONFIG"; then
-      if [ "$ADD_FALLBACK" -eq 1 ] && [ "$ADD_STATUS" -eq 1 ]; then
-        CONFIG_CHANGE="added fallback and status line"
-      elif [ "$ADD_FALLBACK" -eq 1 ]; then
-        CONFIG_CHANGE="added root fallback"
-      else
-        CONFIG_CHANGE="added status line"
-      fi
+      CONFIG_CHANGE="added missing managed defaults"
       report "codex/config.toml" "UPDATED" "$CONFIG_CHANGE; backup: $CONFIG_BACKUP"
     else
       FAILED_COPY=$(next_backup "$CONFIG.failed")
@@ -377,10 +436,12 @@ manage_codex_config() {
       mark_issue
     fi
   elif {
-    printf "%s\n\n" "$FALLBACK"
+    printf "%s\n" "$FALLBACK"
+    printf "%s\n" "$CONTEXT_WINDOW"
+    printf "%s\n\n" "$COMPACT_LIMIT"
     printf "[tui]\n%s\n" "$STATUS_LINE"
   } > "$CONFIG"; then
-    report "codex/config.toml" "CREATED" "root fallback and status line"
+    report "codex/config.toml" "CREATED" "managed defaults"
   else
     report "codex/config.toml" "FAILED" "could not create config"
     mark_issue
@@ -448,6 +509,7 @@ if host_enabled pi; then
     manage_link "$TAG/AGENTS.md" "$PI_DIR/AGENTS.md" "$REPO/AGENTS.md"
     manage_link "$TAG/extensions" "$PI_DIR/extensions" "$REPO/pi/extensions"
     manage_link "$TAG/settings.json" "$PI_DIR/settings.json" "$REPO/pi/settings.json"
+    manage_link "$TAG/models.json" "$PI_DIR/models.json" "$REPO/pi/models.json"
     manage_link "$TAG/agents" "$PI_DIR/agents" "$REPO/agents"
   done
 fi
