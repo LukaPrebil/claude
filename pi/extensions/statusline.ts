@@ -183,11 +183,12 @@ function usageSegments(
 	const ageSec = nowSec - Math.floor(windows.capturedAt / 1000);
 	if (ageSec >= 3600) return undefined; // too stale to be honest
 	const parts: string[] = [];
-	for (const [win, label] of [
+	for (const [win, fallbackLabel] of [
 		[windows.fiveHour, "5h"],
 		[windows.sevenDay, "7d"],
 	] as const) {
 		if (!win) continue;
+		const label = win.label ?? fallbackLabel;
 		const color: ColorToken = ageSec >= 600 ? "dim" : usageColorName(win.pct ?? 0, win.rejected);
 		const resetSuffix =
 			win.resetEpochSec !== null && win.resetEpochSec > nowSec

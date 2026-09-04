@@ -32,9 +32,26 @@ describe('parseCodexUsagePayload', () => {
     });
 
     assert.deepEqual(result, {
-      fiveHour: { pct: 42, resetEpochSec: 1_735_693_200, rejected: false },
-      sevenDay: { pct: 81, resetEpochSec: 1_736_298_000, rejected: false },
+      fiveHour: { pct: 42, resetEpochSec: 1_735_693_200, rejected: false, label: '5h' },
+      sevenDay: { pct: 81, resetEpochSec: 1_736_298_000, rejected: false, label: '7d' },
     });
+  });
+
+  it('uses the reported duration even when only the primary window is returned', () => {
+    const result = parseCodexUsagePayload({
+      rate_limit: {
+        allowed: true,
+        limit_reached: false,
+        primary_window: {
+          used_percent: 11,
+          limit_window_seconds: 604_800,
+          reset_at: 1_736_298_000,
+        },
+      },
+    });
+
+    assert.equal(result?.fiveHour?.label, '7d');
+    assert.equal(result?.sevenDay, null);
   });
 
   it('marks returned windows as rejected when the account limit is reached', () => {

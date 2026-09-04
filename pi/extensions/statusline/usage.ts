@@ -4,6 +4,7 @@ export interface UsageWindow {
   pct: number | null;
   resetEpochSec: number | null;
   rejected: boolean;
+  label?: string;
 }
 
 export interface ParsedUsageWindows {
@@ -25,6 +26,15 @@ function finiteNumber(value: JsonValue | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+export function formatWindowLabel(seconds: number): string | undefined {
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const rounded = Math.round(seconds);
+  if (rounded % 86_400 === 0) return `${rounded / 86_400}d`;
+  if (rounded % 3_600 === 0) return `${rounded / 3_600}h`;
+  if (rounded % 60 === 0) return `${rounded / 60}m`;
+  return `${rounded}s`;
+}
+
 function parseWindow(value: JsonValue | undefined, rejected: boolean): UsageWindow | null {
   const raw = asObject(value);
   if (!raw) return null;
@@ -33,10 +43,12 @@ function parseWindow(value: JsonValue | undefined, rejected: boolean): UsageWind
   if (resetEpochSec !== null && resetEpochSec > 1e12) resetEpochSec /= 1000;
   if (pct === null && resetEpochSec === null) return null;
 
+  const windowSeconds = finiteNumber(raw.limit_window_seconds);
   return {
     pct: pct === null ? null : Math.round(Math.min(Math.max(pct, 0), 999)),
     resetEpochSec: resetEpochSec !== null && resetEpochSec > 0 ? Math.round(resetEpochSec) : null,
     rejected,
+    label: windowSeconds === null ? undefined : formatWindowLabel(windowSeconds),
   };
 }
 
