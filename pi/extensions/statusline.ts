@@ -37,9 +37,9 @@ import {
 	parseCodexUsagePayload,
 	type JsonValue,
 	type UsageWindow,
-} from "../statusline-usage.ts";
+} from "./statusline/usage.ts";
 
-export type { UsageWindow } from "../statusline-usage.ts";
+export type { UsageWindow } from "./statusline/usage.ts";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
