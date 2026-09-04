@@ -21,7 +21,7 @@ This is the first and only bot-authored commit allowed on `main`, amending the a
 - Releasing is two clicks (optionally a dry-run first) and its content is fully derived - no version strings, labels, or release-title conventions for humans to maintain.
 - `main` gains a non-human commit per release; the fork banner's ahead-count includes it (one per release, plus the bot commit's own tag reference).
 - Commit-message discipline becomes load-bearing: a merge whose commits are all `docs:`/`chore:` produces no release; a stray `feat!:` produces a major. The existing conventional-commit gates are the versioning policy.
-- Upstream merges folded into `main` release under this repo's version scheme, so integrations appear in the changelog like any other change.
+- Upstream syncs folded into `main` release under this repo's version scheme, so integrations appear in the changelog like any other change.
 - The npm registry is never contacted for publishing (`npmPublish: false`); `package.json` is a manifest, not a package.
 
 ## Alternatives Considered
