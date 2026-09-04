@@ -12,3 +12,9 @@
 # macOS Finder metadata
 .DS_Store
 **/.DS_Store
+
+# Runtime logs of the derived-policy consumer (pi-permission-system).
+pi/extensions/pi-permission-system/logs/
+
+# npm install output for the push gate
+node_modules/
